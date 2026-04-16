@@ -14,7 +14,7 @@ const app = express();
 |--------------------------------------------------------------------------
 */
 
-// ✅ CORS
+// ✅ CORS (improved)
 app.use(
   cors({
     origin: [
@@ -27,7 +27,7 @@ app.use(
 );
 
 // ✅ Body parsers
-app.use(express.json());
+app.use(express.json({ limit: "10kb" }));
 app.use(express.urlencoded({ extended: true }));
 
 // ✅ Static uploads
@@ -46,37 +46,32 @@ app.use("/api", apiLimiter);
 |--------------------------------------------------------------------------
 */
 
-// ✅ Auth
+// 🔐 Auth (OTP + Password)
 app.use("/api/auth", require("./routes/auth.routes"));
 
-// ✅ Role-based
+// 👤 Users
+app.use("/api/users", userRoutes);
+
+// 🛡️ Role-based
 app.use("/api/admin", require("./routes/admin.routes"));
 app.use("/api/partner", require("./routes/partner.routes"));
 
-// ✅ Core
+// 🍽️ Core
 app.use("/api/restaurants", require("./routes/restaurant.routes"));
 app.use("/api/dishes", require("./routes/dish.routes"));
 app.use("/api/orders", require("./routes/order.routes"));
 
-// ✅ DELIVERY SYSTEM
+// 🚚 Delivery
 app.use("/api/delivery", require("./routes/delivery.routes"));
+app.use("/api/delivery-partner", require("./routes/deliveryPartner.routes"));
 
-// 🔥🔥🔥 ADD THIS (VERY IMPORTANT)
-app.use(
-  "/api/delivery-partner",
-  require("./routes/deliveryPartner.routes")
-);
-
-// ✅ Extra
+// 💰 Extra
 app.use("/api/earnings", require("./routes/earning.routes"));
 app.use("/api/reviews", require("./routes/review.routes"));
 app.use("/api/offers", require("./routes/offer.routes"));
 app.use("/api/banners", require("./routes/banner.routes"));
 app.use("/api/cart", require("./routes/cart.routes"));
-
-// ✅ Users
-app.use("/api/users", userRoutes);
-
+app.use("/api", require("./routes/recaptcha.routes"));
 /*
 |--------------------------------------------------------------------------
 | Health Check
@@ -94,8 +89,9 @@ app.get("/", (req, res) => {
 | 404 Handler
 |--------------------------------------------------------------------------
 */
-app.use((req, res) => {
+app.use((req, res, next) => {
   res.status(404).json({
+    success: false,
     message: "Route not found",
   });
 });

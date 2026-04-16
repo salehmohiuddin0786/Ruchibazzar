@@ -25,7 +25,7 @@ module.exports = (sequelize) => {
 
       email: {
         type: DataTypes.STRING,
-        allowNull: false,
+        allowNull: true, // ✅ optional (OTP users may not give email)
         unique: true,
         validate: {
           isEmail: true,
@@ -34,13 +34,16 @@ module.exports = (sequelize) => {
 
       phone: {
         type: DataTypes.STRING,
+        allowNull: false, // ✅ REQUIRED for OTP login
         unique: true,
-        allowNull: true,
+        validate: {
+          is: /^\+?[1-9]\d{9,14}$/, // ✅ valid phone format
+        },
       },
 
       password: {
         type: DataTypes.STRING,
-        allowNull: false,
+        allowNull: true, // ✅ optional (OTP users don’t need password)
       },
 
       // 🔐 ROLE SYSTEM
@@ -54,6 +57,18 @@ module.exports = (sequelize) => {
       isActive: {
         type: DataTypes.BOOLEAN,
         defaultValue: true,
+      },
+
+      // ✅ OTP VERIFICATION STATUS
+      isVerified: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false,
+      },
+
+      // 🔐 AUTH PROVIDER (future proof)
+      authProvider: {
+        type: DataTypes.ENUM("otp", "password", "google"),
+        defaultValue: "otp",
       },
 
       // =========================
@@ -70,7 +85,7 @@ module.exports = (sequelize) => {
         defaultValue: false,
       },
 
-      // 📍 CURRENT LOCATION (for live tracking)
+      // 📍 CURRENT LOCATION
       currentLat: {
         type: DataTypes.FLOAT,
         allowNull: true,
@@ -81,13 +96,12 @@ module.exports = (sequelize) => {
         allowNull: true,
       },
 
-      // ⭐ OPTIONAL: rating system
+      // ⭐ RATING SYSTEM
       rating: {
         type: DataTypes.FLOAT,
         defaultValue: 5.0,
       },
 
-      // 📦 OPTIONAL: total deliveries count
       totalDeliveries: {
         type: DataTypes.INTEGER,
         defaultValue: 0,
@@ -97,7 +111,6 @@ module.exports = (sequelize) => {
       timestamps: true,
       tableName: "Users",
 
-      // 🔥 IMPORTANT INDEXES (performance)
       indexes: [
         {
           unique: true,
@@ -107,11 +120,14 @@ module.exports = (sequelize) => {
           unique: true,
           fields: ["phone"],
         },
+        {
+          fields: ["role"],
+        },
       ],
     }
   );
 
-  // ✅ EXPORT ROLES (reuse everywhere)
+  // ✅ EXPORT ROLES
   User.ROLES = ROLES;
 
   return User;

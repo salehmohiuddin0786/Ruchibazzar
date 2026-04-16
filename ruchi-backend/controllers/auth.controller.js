@@ -11,20 +11,37 @@ const ROLES = {
 
 /*
 |--------------------------------------------------------------------------
-| Register (Customer / Restaurant Owner)
+| REGISTER (Password OR OTP)
 |--------------------------------------------------------------------------
 */
 exports.register = async (req, res) => {
   try {
-    const { name, email, phone, password, role, restaurantName } = req.body;
+    const {
+      name,
+      email,
+      phone,
+      password,
+      role,
+      restaurantName,
+      isOtpUser = false,
+    } = req.body;
 
-    if (!name || !email || !password) {
+    // ✅ VALIDATION
+    if (!name || (!email && !phone)) {
       return res.status(400).json({
-        message: "Name, email and password are required",
+        message: "Name and (email or phone) are required",
       });
     }
 
-    const existingUser = await User.findOne({ where: { email } });
+    // 🔍 CHECK EXISTING USER
+    let existingUser = null;
+
+    if (email) {
+      existingUser = await User.findOne({ where: { email } });
+    }
+    if (!existingUser && phone) {
+      existingUser = await User.findOne({ where: { phone } });
+    }
 
     if (existingUser) {
       return res.status(400).json({
@@ -32,8 +49,19 @@ exports.register = async (req, res) => {
       });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // 🔐 PASSWORD HANDLING
+    let hashedPassword = null;
 
+    if (!isOtpUser) {
+      if (!password) {
+        return res.status(400).json({
+          message: "Password is required",
+        });
+      }
+      hashedPassword = await bcrypt.hash(password, 10);
+    }
+
+    // 🎭 ROLE LOGIC
     let userRole = role === ROLES.PARTNER ? ROLES.PARTNER : ROLES.CUSTOMER;
 
     if (role === ROLES.ADMIN) {
@@ -42,17 +70,20 @@ exports.register = async (req, res) => {
       });
     }
 
+    // 👤 CREATE USER
     const user = await User.create({
       name,
       email,
       phone,
       password: hashedPassword,
       role: userRole,
+      isVerified: isOtpUser ? true : false,
+      authProvider: isOtpUser ? "otp" : "password",
     });
 
     let restaurant = null;
 
-    // ✅ Auto create restaurant
+    // 🍽️ CREATE RESTAURANT FOR PARTNER
     if (userRole === ROLES.PARTNER) {
       if (!restaurantName) {
         return res.status(400).json({
@@ -71,12 +102,7 @@ exports.register = async (req, res) => {
     res.status(201).json({
       message: "Registered successfully",
       token,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-      },
+      user,
       restaurant,
     });
 
@@ -88,66 +114,92 @@ exports.register = async (req, res) => {
 
 /*
 |--------------------------------------------------------------------------
-| UNIVERSAL LOGIN (SMART LOGIN 🔥)
+| LOGIN (Password OR OTP)
 |--------------------------------------------------------------------------
 */
 exports.login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, phone, isOtpLogin = false } = req.body;
 
-    if (!email || !password) {
-      return res.status(400).json({
-        message: "Email and password are required",
-      });
+    let user;
+
+    // 🔥 OTP LOGIN
+    if (isOtpLogin) {
+      if (!phone) {
+        return res.status(400).json({
+          message: "Phone is required",
+        });
+      }
+
+      user = await User.findOne({ where: { phone } });
+
+      if (!user) {
+        return res.status(400).json({
+          message: "User not found",
+        });
+      }
+
+      if (!user.isVerified) {
+        return res.status(403).json({
+          message: "Phone not verified",
+        });
+      }
     }
 
-    const user = await User.findOne({ where: { email } });
+    // 🔐 PASSWORD LOGIN
+    else {
+      if (!email || !password) {
+        return res.status(400).json({
+          message: "Email and password are required",
+        });
+      }
 
-    if (!user) {
-      return res.status(400).json({
-        message: "Invalid credentials",
-      });
-    }
+      user = await User.findOne({ where: { email } });
 
-    const isMatch = await bcrypt.compare(password, user.password);
+      if (!user) {
+        return res.status(400).json({
+          message: "Invalid credentials",
+        });
+      }
 
-    if (!isMatch) {
-      return res.status(400).json({
-        message: "Invalid credentials",
-      });
+      if (!user.password) {
+        return res.status(400).json({
+          message: "Use OTP login for this account",
+        });
+      }
+
+      const isMatch = await bcrypt.compare(password, user.password);
+
+      if (!isMatch) {
+        return res.status(400).json({
+          message: "Invalid credentials",
+        });
+      }
     }
 
     const token = generateToken(user.id);
 
-    // 🔥 IF CUSTOMER
+    // 🎯 CUSTOMER RESPONSE
     if (user.role === ROLES.CUSTOMER) {
       return res.json({
         message: "Customer login successful",
         token,
         role: "customer",
-        user: {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-        },
+        user,
       });
     }
 
-    // 🔥 IF RESTAURANT OWNER
+    // 🎯 PARTNER RESPONSE
     if (user.role === ROLES.PARTNER) {
       const restaurant = await Restaurant.findOne({
         where: { ownerId: user.id },
       });
 
       return res.json({
-        message: "Restaurant login successful",
+        message: "Partner login successful",
         token,
         role: "partner",
-        user: {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-        },
+        user,
         restaurant,
       });
     }
@@ -160,7 +212,7 @@ exports.login = async (req, res) => {
 
 /*
 |--------------------------------------------------------------------------
-| OPTIONAL: Partner Login (if you still want separate)
+| OPTIONAL: Partner Login (Password only)
 |--------------------------------------------------------------------------
 */
 exports.loginPartner = async (req, res) => {
@@ -174,6 +226,12 @@ exports.loginPartner = async (req, res) => {
     if (!user) {
       return res.status(400).json({
         message: "Restaurant account not found",
+      });
+    }
+
+    if (!user.password) {
+      return res.status(400).json({
+        message: "Use OTP login",
       });
     }
 
@@ -195,15 +253,12 @@ exports.loginPartner = async (req, res) => {
       message: "Restaurant login successful",
       token,
       role: "partner",
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-      },
+      user,
       restaurant,
     });
 
   } catch (error) {
+    console.error("Partner Login Error:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
