@@ -3,94 +3,205 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import {
+  User,
+  Phone,
+  Mail,
+  Calendar,
+  MapPin,
+  Bike,
+  ShieldCheck,
+  CreditCard,
+  FileText,
+  Camera,
+  Lock,
+  Eye,
+  EyeOff,
+  AlertCircle,
+  CheckCircle,
+  Upload,
+  Gift,
+  GraduationCap,
+  Briefcase,
+  HeartHandshake,
+} from "lucide-react";
 
 export default function DeliveryPartnerSignup() {
   const router = useRouter();
-  const [step, setStep] = useState(1);
+
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  
+  const [currentSection, setCurrentSection] = useState("basic");
+
   const [formData, setFormData] = useState({
-    // Basic Info (matches User model)
-    name: "",
-    email: "",
+    // Login / Basic
+    fullName: "",
     phone: "",
+    email: "",
+    dob: "",
+    age: "",
+    gender: "",
+    address: "",
+    city: "",
+    pincode: "",
+    preferredZone: "",
+
+    // KYC
+    aadhaarNumber: "",
+    panNumber: "",
+    voterId: "",
+
+    // Vehicle
+    vehicleType: "bike",
+    drivingLicenseNumber: "",
+    drivingLicenseExpiry: "",
+    vehicleRegistrationNumber: "",
+    vehicleInsurance: "",
+    pucCertificate: "",
+
+    // Bank
+    bankAccountNumber: "",
+    ifscCode: "",
+    accountHolderName: "",
+    upiId: "",
+
+    // Other
+    referralCode: "",
+    educationQualification: "",
+    experience: "",
+    emergencyContact: "",
+
+    // Auth
     password: "",
     confirmPassword: "",
-    
-    // Partner-specific fields
-    vehicleType: "bike", // bike, scooter, car
+
+    // Files
+    profilePhoto: null,
+    aadhaarFront: null,
+    aadhaarBack: null,
+    drivingLicensePhoto: null,
+    cancelledCheque: null,
   });
 
+  const sections = [
+    { id: "basic", title: "Basic Info", icon: User },
+    { id: "kyc", title: "KYC Details", icon: ShieldCheck },
+    { id: "vehicle", title: "Vehicle", icon: Bike },
+    { id: "bank", title: "Bank", icon: CreditCard },
+    { id: "other", title: "Other", icon: FileText },
+  ];
+
   const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    const { name, value, files } = e.target;
+
+    setFormData((prev) => ({
+      ...prev,
+      [name]: files ? files[0] : value,
+    }));
+
     setError("");
   };
 
-  const validateStep1 = () => {
-    if (!formData.name || !formData.email || !formData.phone || !formData.password || !formData.confirmPassword) {
-      setError("Please fill in all fields");
-      return false;
+  const validateForm = () => {
+    if (!formData.fullName.trim()) return setError("Full name is required"), false;
+    if (!/^[0-9]{10}$/.test(formData.phone)) return setError("Enter valid 10-digit mobile number"), false;
+    if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      return setError("Enter valid email address"), false;
     }
-    
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(formData.email)) {
-      setError("Please enter a valid email address");
-      return false;
+    if (!formData.dob) return setError("Date of birth is required"), false;
+    if (!formData.age || Number(formData.age) < 18) return setError("Age must be 18 or above"), false;
+    if (!formData.gender) return setError("Please select gender"), false;
+    if (!formData.address || !formData.city || !formData.pincode) {
+      return setError("Address, city and pin code are required"), false;
     }
-    
-    if (formData.password.length < 6) {
-      setError("Password must be at least 6 characters");
-      return false;
+    if (!formData.preferredZone) return setError("Preferred delivery area is required"), false;
+
+    if (!/^[0-9]{12}$/.test(formData.aadhaarNumber)) {
+      return setError("Enter valid 12-digit Aadhaar number"), false;
     }
-    
-    if (formData.password !== formData.confirmPassword) {
-      setError("Passwords do not match");
-      return false;
+    if (!formData.panNumber) return setError("PAN number is required"), false;
+
+    if (!formData.vehicleType) return setError("Vehicle type is required"), false;
+
+    if (formData.vehicleType !== "cycle" && formData.vehicleType !== "walking") {
+      if (!formData.drivingLicenseNumber) return setError("Driving licence number is required"), false;
+      if (!formData.drivingLicenseExpiry) return setError("Driving licence expiry date is required"), false;
+      if (!formData.vehicleRegistrationNumber) return setError("Vehicle registration number is required"), false;
     }
-    
-    const phoneRegex = /^[0-9]{10}$/;
-    if (!phoneRegex.test(formData.phone)) {
-      setError("Please enter a valid 10-digit phone number");
-      return false;
+
+    if (!formData.bankAccountNumber) return setError("Bank account number is required"), false;
+    if (!formData.ifscCode) return setError("IFSC code is required"), false;
+    if (!formData.accountHolderName) return setError("Account holder name is required"), false;
+
+    if (!formData.emergencyContact || !/^[0-9]{10}$/.test(formData.emergencyContact)) {
+      return setError("Enter valid emergency contact number"), false;
     }
-    
+
+    if (formData.password.length < 6) return setError("Password must be at least 6 characters"), false;
+    if (formData.password !== formData.confirmPassword) return setError("Passwords do not match"), false;
+
     return true;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    if (!validateStep1()) return;
-    
+
+    if (!validateForm()) return;
+
     setIsLoading(true);
     setError("");
 
     try {
-      // Prepare data for API (matches User model)
-      const userData = {
-        name: formData.name,
+      const payload = {
+        name: formData.fullName,
         email: formData.email,
         phone: formData.phone,
         password: formData.password,
-        role: "partner", // Will be set to PARTNER role
+        role: "partner",
+
+        dob: formData.dob,
+        age: formData.age,
+        gender: formData.gender,
+        address: formData.address,
+        city: formData.city,
+        pincode: formData.pincode,
+        preferredZone: formData.preferredZone,
+
+        aadhaarNumber: formData.aadhaarNumber,
+        panNumber: formData.panNumber,
+        voterId: formData.voterId,
+
         vehicleType: formData.vehicleType,
-        isAvailable: false, // Initially not available
+        drivingLicenseNumber: formData.drivingLicenseNumber,
+        drivingLicenseExpiry: formData.drivingLicenseExpiry,
+        vehicleRegistrationNumber: formData.vehicleRegistrationNumber,
+        vehicleInsurance: formData.vehicleInsurance,
+        pucCertificate: formData.pucCertificate,
+
+        bankAccountNumber: formData.bankAccountNumber,
+        ifscCode: formData.ifscCode,
+        accountHolderName: formData.accountHolderName,
+        upiId: formData.upiId,
+
+        referralCode: formData.referralCode,
+        educationQualification: formData.educationQualification,
+        experience: formData.experience,
+        emergencyContact: formData.emergencyContact,
+
+        isAvailable: false,
       };
 
       const response = await fetch("http://localhost:5000/api/delivery-partner/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(userData),
+        body: JSON.stringify(payload),
       });
 
       const data = await response.json();
 
       if (response.ok) {
-        // Redirect to login or verification page
         router.push("/login");
       } else {
         setError(data.message || "Registration failed. Please try again.");
@@ -102,266 +213,288 @@ export default function DeliveryPartnerSignup() {
     }
   };
 
+  const inputClass =
+    "w-full pl-11 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition bg-white text-gray-800";
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center p-4">
-      <div className="w-full max-w-2xl">
-        {/* Header */}
-        <div className="text-center mb-6">
-          <h1 className="text-3xl font-bold text-white">Become a Delivery Partner</h1>
-          <p className="text-orange-100 mt-2">Join our fleet and start earning today</p>
+    <div className="min-h-screen bg-gradient-to-br from-orange-500 via-red-500 to-rose-600 p-4">
+      <div className="max-w-6xl mx-auto py-8">
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-white/20 rounded-2xl backdrop-blur-md mb-4">
+            <Bike className="text-white" size={34} />
+          </div>
+          <h1 className="text-4xl font-bold text-white">Become a Delivery Partner</h1>
+          <p className="text-orange-100 mt-2">
+            Complete your profile and start earning with Ruchibazzar
+          </p>
         </div>
 
-        {/* Signup Card */}
-        <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
-          <div className="bg-orange-600 px-6 py-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
-                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
-                </svg>
-              </div>
+        <div className="bg-white rounded-3xl shadow-2xl overflow-hidden">
+          <div className="bg-gradient-to-r from-orange-600 to-red-600 p-6 text-white">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
-                <h2 className="text-white font-semibold">Partner Registration</h2>
-                <p className="text-orange-100 text-sm">Fill in your details below</p>
+                <h2 className="text-2xl font-bold">Partner Registration</h2>
+                <p className="text-orange-100 text-sm">
+                  Basic info, KYC, vehicle, bank and emergency details
+                </p>
+              </div>
+
+              <div className="bg-white/20 px-4 py-2 rounded-xl text-sm">
+                18+ verification required
               </div>
             </div>
           </div>
 
-          <form onSubmit={handleSubmit} className="p-6 space-y-5">
-            {error && (
-              <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-md">
-                <div className="flex items-center">
-                  <svg className="w-5 h-5 text-red-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
+          <div className="grid grid-cols-1 lg:grid-cols-4">
+            <div className="bg-orange-50 p-5 border-r border-orange-100">
+              <div className="space-y-2">
+                {sections.map((section) => {
+                  const Icon = section.icon;
+                  return (
+                    <button
+                      key={section.id}
+                      type="button"
+                      onClick={() => setCurrentSection(section.id)}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition ${
+                        currentSection === section.id
+                          ? "bg-orange-600 text-white shadow-lg"
+                          : "text-gray-700 hover:bg-white"
+                      }`}
+                    >
+                      <Icon size={18} />
+                      {section.title}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="mt-6 bg-white rounded-2xl p-4 border border-orange-100">
+                <div className="flex items-start gap-2">
+                  <CheckCircle className="text-orange-600 mt-0.5" size={18} />
+                  <p className="text-xs text-gray-600">
+                    Keep your Aadhaar, PAN, licence, RC and bank details ready before submitting.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <form onSubmit={handleSubmit} className="lg:col-span-3 p-6 space-y-6">
+              {error && (
+                <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-xl flex items-center gap-2">
+                  <AlertCircle className="text-red-500" size={20} />
                   <span className="text-red-700 text-sm">{error}</span>
                 </div>
-              </div>
-            )}
-
-            {/* Full Name */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Full Name *
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                  </svg>
-                </div>
-                <input
-                  type="text"
-                  name="name"
-                  value={formData.name}
-                  onChange={handleChange}
-                  className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition"
-                  placeholder="John Doe"
-                  required
-                />
-              </div>
-            </div>
-
-            {/* Email */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Email Address *
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207" />
-                  </svg>
-                </div>
-                <input
-                  type="email"
-                  name="email"
-                  value={formData.email}
-                  onChange={handleChange}
-                  className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition"
-                  placeholder="partner@example.com"
-                  required
-                />
-              </div>
-            </div>
-
-            {/* Phone */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Phone Number *
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                  </svg>
-                </div>
-                <input
-                  type="tel"
-                  name="phone"
-                  value={formData.phone}
-                  onChange={handleChange}
-                  className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition"
-                  placeholder="9876543210"
-                  maxLength="10"
-                  required
-                />
-              </div>
-            </div>
-
-            {/* Vehicle Type */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Vehicle Type *
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0" />
-                  </svg>
-                </div>
-                <select
-                  name="vehicleType"
-                  value={formData.vehicleType}
-                  onChange={handleChange}
-                  className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition appearance-none bg-white"
-                  required
-                >
-                  <option value="bike">Motorcycle (Bike)</option>
-                  <option value="scooter">Scooter</option>
-                  <option value="car">Car</option>
-                </select>
-                <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                  <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </div>
-              </div>
-            </div>
-
-            {/* Password */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Password *
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                  </svg>
-                </div>
-                <input
-                  type={showPassword ? "text" : "password"}
-                  name="password"
-                  value={formData.password}
-                  onChange={handleChange}
-                  className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition"
-                  placeholder="•••••••• (min. 6 characters)"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                >
-                  {showPassword ? (
-                    <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-                    </svg>
-                  ) : (
-                    <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                    </svg>
-                  )}
-                </button>
-              </div>
-              <p className="text-xs text-gray-500 mt-1">Must be at least 6 characters</p>
-            </div>
-
-            {/* Confirm Password */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Confirm Password *
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                  </svg>
-                </div>
-                <input
-                  type={showConfirmPassword ? "text" : "password"}
-                  name="confirmPassword"
-                  value={formData.confirmPassword}
-                  onChange={handleChange}
-                  className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition"
-                  placeholder="••••••••"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                >
-                  {showConfirmPassword ? (
-                    <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-                    </svg>
-                  ) : (
-                    <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                    </svg>
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {/* Info Box */}
-            <div className="bg-orange-50 p-4 rounded-lg">
-              <div className="flex items-start gap-2">
-                <svg className="w-5 h-5 text-orange-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <div className="text-xs text-orange-800">
-                  <p className="font-semibold mb-1">What happens next?</p>
-                  <p>Your application will be reviewed within 24 hours. Once approved, you'll receive a confirmation email and can start accepting deliveries immediately.</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Submit Button */}
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full bg-orange-600 hover:bg-orange-700 text-white font-semibold py-3 rounded-lg transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              {isLoading ? (
-                <>
-                  <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Registering...
-                </>
-              ) : (
-                "Register as Delivery Partner"
               )}
-            </button>
 
-            {/* Login Link */}
-            <div className="text-center pt-4 border-t border-gray-200">
-              <p className="text-sm text-gray-600">
-                Already have an account?{" "}
-                <Link href="/login" className="text-orange-600 hover:text-orange-700 font-medium">
-                  Sign in here
-                </Link>
-              </p>
-            </div>
-          </form>
+              {currentSection === "basic" && (
+                <Section title="Basic Personal Information">
+                  <Input icon={User} label="Full Name as per Aadhaar *" name="fullName" value={formData.fullName} onChange={handleChange} placeholder="Enter full name" className={inputClass} />
+                  <Input icon={Phone} label="Mobile Number *" name="phone" value={formData.phone} onChange={handleChange} placeholder="9876543210" maxLength="10" className={inputClass} />
+                  <Input icon={Mail} label="Email ID" name="email" type="email" value={formData.email} onChange={handleChange} placeholder="partner@example.com" className={inputClass} />
+                  <Input icon={Calendar} label="Date of Birth *" name="dob" type="date" value={formData.dob} onChange={handleChange} className={inputClass} />
+                  <Input icon={Calendar} label="Age *" name="age" type="number" value={formData.age} onChange={handleChange} placeholder="18+" className={inputClass} />
+
+                  <Select icon={User} label="Gender *" name="gender" value={formData.gender} onChange={handleChange} className={inputClass}>
+                    <option value="">Select gender</option>
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                    <option value="other">Other</option>
+                  </Select>
+
+                  <Input icon={MapPin} label="Current Address *" name="address" value={formData.address} onChange={handleChange} placeholder="House no, street, landmark" className={inputClass} />
+                  <Input icon={MapPin} label="City *" name="city" value={formData.city} onChange={handleChange} placeholder="Adilabad" className={inputClass} />
+                  <Input icon={MapPin} label="Pin Code *" name="pincode" value={formData.pincode} onChange={handleChange} placeholder="504001" maxLength="6" className={inputClass} />
+                  <Input icon={MapPin} label="Preferred Delivery Area / Zone *" name="preferredZone" value={formData.preferredZone} onChange={handleChange} placeholder="Example: Bus stand, market area" className={inputClass} />
+                </Section>
+              )}
+
+              {currentSection === "kyc" && (
+                <Section title="Identity & KYC Details">
+                  <Input icon={ShieldCheck} label="Aadhaar Card Number *" name="aadhaarNumber" value={formData.aadhaarNumber} onChange={handleChange} placeholder="12-digit Aadhaar number" maxLength="12" className={inputClass} />
+                  <Input icon={ShieldCheck} label="PAN Card Number *" name="panNumber" value={formData.panNumber} onChange={handleChange} placeholder="ABCDE1234F" className={inputClass} />
+                  <Input icon={ShieldCheck} label="Voter ID optional" name="voterId" value={formData.voterId} onChange={handleChange} placeholder="If no Aadhaar" className={inputClass} />
+                  <FileInput label="Upload Aadhaar Front Photo" name="aadhaarFront" onChange={handleChange} />
+                  <FileInput label="Upload Aadhaar Back Photo" name="aadhaarBack" onChange={handleChange} />
+                </Section>
+              )}
+
+              {currentSection === "vehicle" && (
+                <Section title="Vehicle Details">
+                  <Select icon={Bike} label="Vehicle Type *" name="vehicleType" value={formData.vehicleType} onChange={handleChange} className={inputClass}>
+                    <option value="bike">Bike</option>
+                    <option value="scooter">Scooter</option>
+                    <option value="cycle">Cycle</option>
+                    <option value="walking">Walking</option>
+                  </Select>
+
+                  <Input icon={FileText} label="Driving Licence Number" name="drivingLicenseNumber" value={formData.drivingLicenseNumber} onChange={handleChange} placeholder="DL number" className={inputClass} />
+                  <Input icon={Calendar} label="Driving Licence Expiry Date" name="drivingLicenseExpiry" type="date" value={formData.drivingLicenseExpiry} onChange={handleChange} className={inputClass} />
+                  <Input icon={Bike} label="Vehicle Registration Number / RC" name="vehicleRegistrationNumber" value={formData.vehicleRegistrationNumber} onChange={handleChange} placeholder="TS 01 AB 1234" className={inputClass} />
+                  <Input icon={ShieldCheck} label="Vehicle Insurance" name="vehicleInsurance" value={formData.vehicleInsurance} onChange={handleChange} placeholder="Insurance policy / validity" className={inputClass} />
+                  <Input icon={FileText} label="PUC Certificate" name="pucCertificate" value={formData.pucCertificate} onChange={handleChange} placeholder="PUC details" className={inputClass} />
+                  <FileInput label="Upload Driving Licence Photo" name="drivingLicensePhoto" onChange={handleChange} />
+                </Section>
+              )}
+
+              {currentSection === "bank" && (
+                <Section title="Bank Details for Weekly Payouts">
+                  <Input icon={CreditCard} label="Bank Account Number *" name="bankAccountNumber" value={formData.bankAccountNumber} onChange={handleChange} placeholder="Enter account number" className={inputClass} />
+                  <Input icon={CreditCard} label="IFSC Code *" name="ifscCode" value={formData.ifscCode} onChange={handleChange} placeholder="Example: HDFC0001234" className={inputClass} />
+                  <Input icon={User} label="Account Holder Name *" name="accountHolderName" value={formData.accountHolderName} onChange={handleChange} placeholder="As per bank" className={inputClass} />
+                  <Input icon={CreditCard} label="UPI ID optional" name="upiId" value={formData.upiId} onChange={handleChange} placeholder="example@upi" className={inputClass} />
+                  <FileInput label="Upload Cancelled Cheque / Passbook Photo" name="cancelledCheque" onChange={handleChange} />
+                </Section>
+              )}
+
+              {currentSection === "other" && (
+                <Section title="Other Details">
+                  <FileInput label="Upload Profile Photo" name="profilePhoto" onChange={handleChange} icon={Camera} />
+                  <Input icon={Gift} label="Referral Code" name="referralCode" value={formData.referralCode} onChange={handleChange} placeholder="Optional" className={inputClass} />
+                  <Input icon={GraduationCap} label="Education Qualification" name="educationQualification" value={formData.educationQualification} onChange={handleChange} placeholder="Example: 10th / Inter / Degree" className={inputClass} />
+                  <Input icon={Briefcase} label="Previous Delivery Experience" name="experience" value={formData.experience} onChange={handleChange} placeholder="Optional" className={inputClass} />
+                  <Input icon={HeartHandshake} label="Emergency Contact Number *" name="emergencyContact" value={formData.emergencyContact} onChange={handleChange} placeholder="10-digit number" maxLength="10" className={inputClass} />
+
+                  <PasswordInput
+                    label="Password *"
+                    name="password"
+                    value={formData.password}
+                    onChange={handleChange}
+                    show={showPassword}
+                    setShow={setShowPassword}
+                    inputClass={inputClass}
+                  />
+
+                  <PasswordInput
+                    label="Confirm Password *"
+                    name="confirmPassword"
+                    value={formData.confirmPassword}
+                    onChange={handleChange}
+                    show={showConfirmPassword}
+                    setShow={setShowConfirmPassword}
+                    inputClass={inputClass}
+                  />
+                </Section>
+              )}
+
+              <div className="flex flex-col md:flex-row gap-3 pt-4 border-t">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const index = sections.findIndex((s) => s.id === currentSection);
+                    if (index > 0) setCurrentSection(sections[index - 1].id);
+                  }}
+                  className="md:w-40 py-3 rounded-xl border border-gray-300 text-gray-700 font-medium hover:bg-gray-50"
+                >
+                  Previous
+                </button>
+
+                {currentSection !== "other" ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const index = sections.findIndex((s) => s.id === currentSection);
+                      setCurrentSection(sections[index + 1].id);
+                    }}
+                    className="flex-1 bg-orange-600 hover:bg-orange-700 text-white font-semibold py-3 rounded-xl transition"
+                  >
+                    Save & Continue
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    disabled={isLoading}
+                    className="flex-1 bg-orange-600 hover:bg-orange-700 text-white font-semibold py-3 rounded-xl transition disabled:opacity-50"
+                  >
+                    {isLoading ? "Registering..." : "Register as Delivery Partner"}
+                  </button>
+                )}
+              </div>
+
+              <div className="text-center pt-2">
+                <p className="text-sm text-gray-600">
+                  Already have an account?{" "}
+                  <Link href="/login" className="text-orange-600 font-semibold hover:text-orange-700">
+                    Sign in here
+                  </Link>
+                </p>
+              </div>
+            </form>
+          </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function Section({ title, children }) {
+  return (
+    <div>
+      <h3 className="text-xl font-bold text-gray-800 mb-5">{title}</h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">{children}</div>
+    </div>
+  );
+}
+
+function Input({ icon: Icon, label, className, ...props }) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <div className="relative">
+        <Icon className="absolute left-3 top-3.5 text-gray-400" size={19} />
+        <input {...props} className={className} />
+      </div>
+    </div>
+  );
+}
+
+function Select({ icon: Icon, label, className, children, ...props }) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <div className="relative">
+        <Icon className="absolute left-3 top-3.5 text-gray-400" size={19} />
+        <select {...props} className={`${className} appearance-none`}>
+          {children}
+        </select>
+      </div>
+    </div>
+  );
+}
+
+function FileInput({ label, name, onChange, icon: Icon = Upload }) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <label className="flex items-center gap-3 px-4 py-3 border-2 border-dashed border-orange-200 rounded-xl cursor-pointer hover:bg-orange-50 transition">
+        <Icon size={20} className="text-orange-600" />
+        <span className="text-sm text-gray-600">Choose file</span>
+        <input type="file" name={name} onChange={onChange} className="hidden" accept="image/*,.pdf" />
+      </label>
+    </div>
+  );
+}
+
+function PasswordInput({ label, name, value, onChange, show, setShow, inputClass }) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <div className="relative">
+        <Lock className="absolute left-3 top-3.5 text-gray-400" size={19} />
+        <input
+          type={show ? "text" : "password"}
+          name={name}
+          value={value}
+          onChange={onChange}
+          placeholder="Minimum 6 characters"
+          className={`${inputClass} pr-12`}
+        />
+        <button
+          type="button"
+          onClick={() => setShow(!show)}
+          className="absolute right-3 top-3.5 text-gray-400"
+        >
+          {show ? <EyeOff size={19} /> : <Eye size={19} />}
+        </button>
       </div>
     </div>
   );

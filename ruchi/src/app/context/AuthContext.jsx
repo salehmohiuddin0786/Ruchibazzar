@@ -1,42 +1,31 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import axios from "axios";
 
-/* ==============================
-   API CONFIG
-============================== */
+/* ================= API ================= */
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
 
-/* ==============================
-   AXIOS INSTANCE
-============================== */
-
 const api = axios.create({
   baseURL: API_URL,
+  headers: {
+    "Content-Type": "application/json",
+  },
 });
 
-/* ==============================
-   AUTH CONTEXT
-============================== */
+/* ================= CONTEXT ================= */
 
 const AuthContext = createContext(null);
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-
-  if (!context) {
-    throw new Error("useAuth must be used inside AuthProvider");
-  }
-
+  if (!context) throw new Error("useAuth must be used inside AuthProvider");
   return context;
 };
 
-/* ==============================
-   AUTH PROVIDER
-============================== */
+/* ================= PROVIDER ================= */
 
 export const AuthProvider = ({ children }) => {
   const router = useRouter();
@@ -44,35 +33,24 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  /* ==============================
-     LOAD USER FROM LOCAL STORAGE
-  ============================== */
-
+  /* ---------- INIT AUTH ---------- */
   useEffect(() => {
-    const initializeAuth = () => {
-      try {
-        const token = localStorage.getItem("token");
-        const storedUser = localStorage.getItem("user");
+    const token = localStorage.getItem("token");
+    const storedUser = localStorage.getItem("user");
 
-        if (token && storedUser) {
-          setUser(JSON.parse(storedUser));
-        }
-      } catch (error) {
-        console.error("Auth initialization error:", error);
+    if (token && storedUser) {
+      try {
+        setUser(JSON.parse(storedUser));
+      } catch (err) {
         localStorage.removeItem("token");
         localStorage.removeItem("user");
-      } finally {
-        setLoading(false);
       }
-    };
+    }
 
-    initializeAuth();
+    setLoading(false);
   }, []);
 
-  /* ==============================
-     AXIOS TOKEN INTERCEPTOR
-  ============================== */
-
+  /* ---------- AXIOS INTERCEPTOR ---------- */
   useEffect(() => {
     const interceptor = api.interceptors.request.use((config) => {
       const token = localStorage.getItem("token");
@@ -84,95 +62,112 @@ export const AuthProvider = ({ children }) => {
       return config;
     });
 
-    return () => {
-      api.interceptors.request.eject(interceptor);
-    };
+    return () => api.interceptors.request.eject(interceptor);
   }, []);
 
-  /* ==============================
-     LOGIN
-  ============================== */
+  /* ================= LOGIN ================= */
 
-  const login = async (email, password) => {
+  const login = async ({ email, password, token, user: sessionUser }) => {
     try {
-      const response = await api.post("/auth/login", {
+      if (token && sessionUser) {
+        localStorage.setItem("token", token);
+        localStorage.setItem("user", JSON.stringify(sessionUser));
+        setUser(sessionUser);
+
+        return {
+          success: true,
+          user: sessionUser,
+          token,
+        };
+      }
+
+      const res = await api.post("/auth/login", {
         email,
         password,
       });
 
-      const { user, token } = response.data;
+      const data = res.data;
 
-      localStorage.setItem("token", token);
-      localStorage.setItem("user", JSON.stringify(user));
+      if (!data?.token || !data?.user) {
+        return {
+          success: false,
+          error: "Invalid server response",
+        };
+      }
 
-      setUser(user);
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
 
-      return { success: true };
+      setUser(data.user);
+
+      return {
+        success: true,
+        user: data.user,
+        token: data.token,
+      };
     } catch (error) {
+      const msg =
+        error?.response?.data?.message ||
+        error?.response?.data?.error ||
+        "Login failed";
+
       return {
         success: false,
-        error:
-          error.response?.data?.message ||
-          "Login failed. Please check credentials.",
+        error: msg,
       };
     }
   };
 
-  /* ==============================
-     REGISTER
-  ============================== */
+  /* ================= REGISTER ================= */
 
   const register = async (userData) => {
     try {
-      const response = await api.post("/auth/register", userData);
+      const res = await api.post("/auth/register", userData);
 
-      const { user, token } = response.data;
+      const data = res.data;
 
-      localStorage.setItem("token", token);
-      localStorage.setItem("user", JSON.stringify(user));
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
 
-      setUser(user);
+      setUser(data.user);
 
-      return { success: true };
+      return {
+        success: true,
+        user: data.user,
+      };
     } catch (error) {
       return {
         success: false,
         error:
-          error.response?.data?.message ||
-          "Registration failed. Please try again.",
+          error?.response?.data?.message ||
+          "Registration failed",
       };
     }
   };
 
-  /* ==============================
-     LOGOUT
-  ============================== */
+  /* ================= LOGOUT ================= */
 
   const logout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
-
     setUser(null);
-
     router.push("/login");
   };
 
-  /* ==============================
-     CONTEXT VALUE
-  ============================== */
-
-  const value = {
-    user,
-    login,
-    register,
-    logout,
-    loading,
-    isAuthenticated: !!user,
-  };
+  /* ================= VALUE ================= */
 
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider
+      value={{
+        user,
+        login,
+        register,
+        logout,
+        loading,
+        isAuthenticated: !!user,
+      }}
+    >
       {!loading && children}
     </AuthContext.Provider>
   );
-};  
+};

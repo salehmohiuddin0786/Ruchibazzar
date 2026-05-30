@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { 
+import {
   User, 
   Mail, 
   Phone, 
@@ -14,11 +14,14 @@ import {
   EyeOff,
   AlertCircle,
   Send,
-  KeyRound
+  KeyRound,
+  ArrowLeft
 } from 'lucide-react';
-import { auth } from '../firebase';
-import { RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
 import axios from "axios";
+import { RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
+import { auth } from "../firebase";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
 
 export default function RegisterPage() {
   const { register, handleSubmit, formState: { errors }, watch } = useForm();
@@ -29,127 +32,61 @@ export default function RegisterPage() {
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState(null);
   const [otp, setOtp] = useState('');
-  const [confirmObj, setConfirmObj] = useState(null);
   const [sendingOtp, setSendingOtp] = useState(false);
   const [verifyingOtp, setVerifyingOtp] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [confirmationResult, setConfirmationResult] = useState(null);
   const router = useRouter();
-  const recaptchaContainerRef = useRef(null);
 
   const password = watch('password');
 
-  // Initialize Firebase reCAPTCHA with correct syntax
-  useEffect(() => {
-    if (!recaptchaContainerRef.current) return;
-
-    if (typeof window !== "undefined" && !window.recaptchaVerifier) {
-      try {
-        window.recaptchaVerifier = new RecaptchaVerifier(
-          auth, // ✅ FIRST PARAM - Firebase Auth instance
-          recaptchaContainerRef.current, // ✅ SECOND PARAM - Container element
-          {
-            size: "invisible",
-            "expired-callback": () => {
-              console.log("reCAPTCHA expired");
-              window.recaptchaVerifier = null;
-            },
-          }
-        );
-
-        console.log("Firebase reCAPTCHA initialized ✅");
-      } catch (error) {
-        console.error("Error setting up reCAPTCHA:", error);
-      }
+  const getRecaptchaVerifier = () => {
+    if (!window.recaptchaVerifier) {
+      window.recaptchaVerifier = new RecaptchaVerifier(
+        auth,
+        "signup-recaptcha-container",
+        { size: "invisible" }
+      );
     }
 
-    // Cleanup on unmount
-    return () => {
-      if (window.recaptchaVerifier) {
-        try {
-          window.recaptchaVerifier.clear();
-          window.recaptchaVerifier = null;
-        } catch (e) {
-          console.log("Error clearing recaptcha:", e);
-        }
-      }
-    };
-  }, []);
+    return window.recaptchaVerifier;
+  };
+
+  // Resend cooldown timer
+  useEffect(() => {
+    if (resendCooldown > 0) {
+      const timer = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [resendCooldown]);
 
   const sendOTP = async (userData) => {
     setSendingOtp(true);
     setError('');
     
     try {
-      // Check if reCAPTCHA is initialized
-      if (!window.recaptchaVerifier) {
-        // Try to recreate it
-        if (recaptchaContainerRef.current) {
-          window.recaptchaVerifier = new RecaptchaVerifier(
-            auth,
-            recaptchaContainerRef.current,
-            {
-              size: "invisible",
-              "expired-callback": () => {
-                console.log("reCAPTCHA expired");
-                window.recaptchaVerifier = null;
-              },
-            }
-          );
-        } else {
-          throw new Error("Security verification not ready. Please refresh the page.");
-        }
-      }
-
-      // Format phone number
-      let phoneNumber = userData.phone.trim();
-      if (!phoneNumber.startsWith('+')) {
-        phoneNumber = '+91' + phoneNumber;
-      }
-      
-      if (!/^\+\d{10,15}$/.test(phoneNumber)) {
+      if (!/^[6-9]\d{9}$/.test(userData.phone)) {
         throw new Error('Please enter a valid 10-digit phone number');
       }
 
-      console.log("Sending OTP to:", phoneNumber);
-      
-      // Send OTP via Firebase
-      const result = await signInWithPhoneNumber(
-        auth,
-        phoneNumber,
-        window.recaptchaVerifier
-      );
+      const appVerifier = getRecaptchaVerifier();
+      const result = await signInWithPhoneNumber(auth, `+91${userData.phone}`, appVerifier);
 
-      setConfirmObj(result);
+      setConfirmationResult(result);
       setFormData(userData);
       setStep(2);
-      alert("OTP Sent Successfully! ✅");
+      setResendCooldown(30);
+      
+      const successDiv = document.createElement('div');
+      successDiv.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50';
+      successDiv.textContent = 'OTP Sent Successfully! ✅';
+      document.body.appendChild(successDiv);
+      setTimeout(() => successDiv.remove(), 3000);
+      
     } catch (error) {
       console.error("Send OTP Error:", error);
-      if (error.code === 'auth/invalid-phone-number') {
-        setError('Invalid phone number. Please enter a 10-digit number.');
-      } else if (error.code === 'auth/too-many-requests') {
-        setError('Too many requests. Please try again later.');
-      } else if (error.code === 'auth/quota-exceeded') {
-        setError('SMS quota exceeded. Please try again later.');
-      } else if (error.message === 'recaptcha has already been rendered in this element') {
-        // Reset and try again
-        if (window.recaptchaVerifier) {
-          await window.recaptchaVerifier.clear();
-          window.recaptchaVerifier = null;
-        }
-        setError('Please try again. Refreshing security verification...');
-        // Reload reCAPTCHA
-        if (recaptchaContainerRef.current) {
-          window.recaptchaVerifier = new RecaptchaVerifier(
-            auth,
-            recaptchaContainerRef.current,
-            {
-              size: "invisible",
-              "expired-callback": () => {
-                window.recaptchaVerifier = null;
-              },
-            }
-          );
-        }
+      if (error.response?.data?.message) {
+        setError(error.response.data.message);
       } else {
         setError(error.message || 'Error sending OTP. Please try again.');
       }
@@ -159,8 +96,13 @@ export default function RegisterPage() {
   };
 
   const verifyOTP = async () => {
-    if (!confirmObj) {
+    if (!formData) {
       setError('Session expired. Please go back and request OTP again.');
+      return;
+    }
+    
+    if (!/^\d{4,8}$/.test(otp)) {
+      setError('Please enter a valid OTP');
       return;
     }
     
@@ -168,43 +110,58 @@ export default function RegisterPage() {
     setError('');
     
     try {
-      // Verify OTP with Firebase
-      const result = await confirmObj.confirm(otp);
-      
-      // Get the Firebase ID Token
-      const idToken = await result.user.getIdToken();
-      
-      // Send ID Token to backend for verification
-      const response = await axios.post("http://localhost:5000/api/auth/phone-signup", {
-        idToken: idToken,
-        userData: {
-          name: formData.name,
-          email: formData.email,
-          phone: formData.phone,
-          password: formData.password,
-          role: 'customer'
-        }
-      });
+      if (!confirmationResult) {
+        throw new Error('Session expired. Please go back and request OTP again.');
+      }
 
-      if (response.data.success) {
-        alert("Signup Successful! 🎉");
-        router.push('/login');
+      const firebaseResult = await confirmationResult.confirm(otp);
+      const firebaseIdToken = await firebaseResult.user.getIdToken();
+      
+      const registerResponse = await axios.post(`${API_URL}/auth/register`, {
+        name: formData.name,
+        email: formData.email,
+        phone: formData.phone,
+        password: formData.password,
+        role: 'customer',
+        firebaseIdToken,
+      });
+      
+      if (registerResponse.data.success) {
+        // Auto-login after registration
+        localStorage.setItem('token', registerResponse.data.token);
+        localStorage.setItem('user', JSON.stringify(registerResponse.data.user));
+        
+        const successDiv = document.createElement('div');
+        successDiv.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50';
+        successDiv.textContent = 'Signup Successful! 🎉 Redirecting...';
+        document.body.appendChild(successDiv);
+        setTimeout(() => successDiv.remove(), 3000);
+        
+        // Redirect to home page after 2 seconds
+        setTimeout(() => {
+          router.push('/');
+        }, 2000);
       } else {
-        setError(response.data.message || 'Signup failed. Please try again.');
+        setError(registerResponse.data.message || 'Registration failed');
       }
     } catch (error) {
-      console.error("Verify OTP Error:", error);
+      console.error("Verify OTP Error:", error.response?.data || error);
+      
       if (error.code === 'auth/invalid-verification-code') {
         setError("Invalid OTP. Please check the code and try again.");
       } else if (error.code === 'auth/session-expired') {
         setError("Session expired. Please go back and request OTP again.");
-      } else if (error.response?.data?.message?.toLowerCase().includes('already exists')) {
-        setError('An account with this email already exists. Please login instead.');
-        setTimeout(() => {
-          router.push('/login');
-        }, 3000);
+      } else if (error.response?.data?.message) {
+        if (error.response.data.message.toLowerCase().includes('already exists')) {
+          setError('An account with this email or phone already exists. Please login instead.');
+          setTimeout(() => {
+            router.push('/login');
+          }, 3000);
+        } else {
+          setError(error.response.data.message);
+        }
       } else {
-        setError(error.response?.data?.message || "Verification failed. Please try again.");
+        setError(error.message || "Verification failed. Please try again.");
       }
     } finally {
       setVerifyingOtp(false);
@@ -212,8 +169,25 @@ export default function RegisterPage() {
   };
 
   const onSubmit = async (data) => {
-    setLoading(true);
     setError('');
+    
+    // Validate phone number format
+    if (!/^\d{10}$/.test(data.phone)) {
+      setError('Please enter a valid 10-digit phone number');
+      return;
+    }
+    
+    // Validate password match
+    if (data.password !== data.confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+    
+    // Validate password strength
+    if (data.password.length < 6) {
+      setError('Password must be at least 6 characters long');
+      return;
+    }
     
     const userData = {
       name: data.name,
@@ -224,15 +198,26 @@ export default function RegisterPage() {
     };
     
     await sendOTP(userData);
-    setLoading(false);
   };
 
   const resendOTP = async () => {
+    if (resendCooldown > 0) {
+      setError(`Please wait ${resendCooldown} seconds before resending`);
+      return;
+    }
+    
     if (formData) {
-      setConfirmObj(null);
       setOtp('');
       await sendOTP(formData);
     }
+  };
+
+  const goBackToForm = () => {
+    setStep(1);
+    setError('');
+    setOtp('');
+    setFormData(null);
+    setConfirmationResult(null);
   };
 
   // OTP Verification Step
@@ -243,6 +228,14 @@ export default function RegisterPage() {
         
         <div className="relative w-full max-w-md">
           <div className="bg-white rounded-2xl shadow-2xl p-8 space-y-6">
+            <button
+              onClick={goBackToForm}
+              className="flex items-center text-gray-600 hover:text-gray-800 transition duration-200 mb-2"
+            >
+              <ArrowLeft className="h-5 w-5 mr-1" />
+              <span className="text-sm">Back</span>
+            </button>
+
             <div className="text-center space-y-2">
               <div className="mx-auto w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mb-4">
                 <KeyRound className="h-8 w-8 text-purple-600" />
@@ -251,7 +244,7 @@ export default function RegisterPage() {
                 Verify Your Phone
               </h1>
               <p className="text-gray-500 text-sm">
-                We've sent a verification code to {formData?.phone}
+                We&apos;ve sent a verification code to <strong>{formData?.phone}</strong>
               </p>
             </div>
 
@@ -263,10 +256,16 @@ export default function RegisterPage() {
               }`}>
                 <div className="flex">
                   <div className="flex-shrink-0">
-                    <AlertCircle className="h-5 w-5 text-red-400" />
+                    <AlertCircle className={`h-5 w-5 ${
+                      error.includes('already exists') ? 'text-yellow-400' : 'text-red-400'
+                    }`} />
                   </div>
                   <div className="ml-3">
-                    <p className="text-sm text-red-600">{error}</p>
+                    <p className={`text-sm ${
+                      error.includes('already exists') ? 'text-yellow-600' : 'text-red-600'
+                    }`}>
+                      {error}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -280,17 +279,31 @@ export default function RegisterPage() {
                 <input
                   type="text"
                   value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-                  placeholder="Enter 6-digit OTP"
+                  onChange={(e) => {
+                    const value = e.target.value.replace(/\D/g, '').slice(0, 8);
+                    setOtp(value);
+                    if (value.length === 6) {
+                      setError('');
+                    }
+                  }}
+                  placeholder="Enter OTP"
                   className="block w-full px-4 py-3 text-center text-2xl tracking-widest border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition duration-200 text-black"
-                  maxLength="6"
+                  maxLength="8"
                   autoFocus
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' && /^\d{4,8}$/.test(otp)) {
+                      verifyOTP();
+                    }
+                  }}
                 />
+                <p className="text-xs text-gray-500 mt-2 text-center">
+                  Enter the code sent to your phone
+                </p>
               </div>
 
               <button
                 onClick={verifyOTP}
-                disabled={verifyingOtp || otp.length !== 6}
+                disabled={verifyingOtp || !/^\d{4,8}$/.test(otp)}
                 className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white py-3 rounded-lg font-semibold hover:from-purple-700 hover:to-indigo-700 focus:ring-4 focus:ring-purple-300 transition duration-200 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
               >
                 {verifyingOtp ? (
@@ -309,23 +322,18 @@ export default function RegisterPage() {
               <div className="text-center">
                 <button
                   onClick={resendOTP}
-                  disabled={sendingOtp}
-                  className="text-purple-600 hover:text-purple-500 text-sm font-medium hover:underline transition duration-200"
+                  disabled={sendingOtp || resendCooldown > 0}
+                  className="text-purple-600 hover:text-purple-500 text-sm font-medium hover:underline transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {sendingOtp ? 'Sending...' : 'Resend OTP'}
+                  {sendingOtp ? (
+                    'Sending...'
+                  ) : resendCooldown > 0 ? (
+                    `Resend OTP in ${resendCooldown}s`
+                  ) : (
+                    'Resend OTP'
+                  )}
                 </button>
               </div>
-
-              <button
-                onClick={() => {
-                  setStep(1);
-                  setError('');
-                  setOtp('');
-                }}
-                className="w-full text-gray-600 hover:text-gray-800 text-sm font-medium transition duration-200"
-              >
-                ← Back to registration
-              </button>
             </div>
           </div>
         </div>
@@ -341,10 +349,13 @@ export default function RegisterPage() {
       <div className="relative w-full max-w-lg">
         <div className="bg-white rounded-2xl shadow-2xl p-8 space-y-6">
           <div className="text-center space-y-2">
+            <div className="mx-auto w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mb-4">
+              <User className="h-8 w-8 text-purple-600" />
+            </div>
             <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
               Create Account
             </h1>
-            <p className="text-gray-500">Join us as a customer! It's free and easy.</p>
+            <p className="text-gray-500">Join us as a customer! It&apos;s free and easy.</p>
           </div>
 
           {error && (
@@ -364,7 +375,7 @@ export default function RegisterPage() {
             {/* Name Field */}
             <div className="space-y-1">
               <label htmlFor="name" className="block text-sm font-medium text-gray-700">
-                Full Name
+                Full Name *
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -394,7 +405,7 @@ export default function RegisterPage() {
             {/* Email Field */}
             <div className="space-y-1">
               <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-                Email Address
+                Email Address *
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -424,7 +435,7 @@ export default function RegisterPage() {
             {/* Phone Field */}
             <div className="space-y-1">
               <label htmlFor="phone" className="block text-sm font-medium text-gray-700">
-                Phone Number
+                Phone Number *
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -450,14 +461,14 @@ export default function RegisterPage() {
                 <p className="text-sm text-red-600 mt-1">{errors.phone.message}</p>
               )}
               <p className="text-xs text-gray-500 mt-1">
-                Enter 10-digit mobile number
+                Enter 10-digit mobile number (without country code)
               </p>
             </div>
 
             {/* Password Field */}
             <div className="space-y-1">
               <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                Password
+                Password *
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -489,12 +500,15 @@ export default function RegisterPage() {
               {errors.password && (
                 <p className="text-sm text-red-600 mt-1">{errors.password.message}</p>
               )}
+              <p className="text-xs text-gray-500 mt-1">
+                Minimum 6 characters
+              </p>
             </div>
 
             {/* Confirm Password */}
             <div className="space-y-1">
               <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700">
-                Confirm Password
+                Confirm Password *
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -551,13 +565,13 @@ export default function RegisterPage() {
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || sendingOtp}
               className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white py-2.5 rounded-lg font-semibold hover:from-purple-700 hover:to-indigo-700 focus:ring-4 focus:ring-purple-300 transition duration-200 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center space-x-2 mt-6"
             >
-              {loading ? (
+              {loading || sendingOtp ? (
                 <div className="flex items-center justify-center space-x-2">
                   <div className="w-5 h-5 border-t-2 border-b-2 border-white rounded-full animate-spin" />
-                  <span>Sending OTP...</span>
+                  <span>{sendingOtp ? 'Sending OTP...' : 'Processing...'}</span>
                 </div>
               ) : (
                 <>
@@ -566,6 +580,7 @@ export default function RegisterPage() {
                 </>
               )}
             </button>
+            <div id="signup-recaptcha-container" />
           </form>
 
           <div className="text-center pt-4 border-t border-gray-200">
@@ -579,8 +594,6 @@ export default function RegisterPage() {
         </div>
       </div>
 
-      {/* Firebase reCAPTCHA Container */}
-      <div id="recaptcha-container" ref={recaptchaContainerRef}></div>
     </div>
   );
 }

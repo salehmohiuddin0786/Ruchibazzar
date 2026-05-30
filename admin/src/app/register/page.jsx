@@ -1,477 +1,721 @@
 "use client";
+
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Mail, Lock, Eye, EyeOff, User, Phone, Store, ArrowRight, CheckCircle, AlertCircle } from "lucide-react";
+import {
+  Phone,
+  Store,
+  User,
+  Mail,
+  Lock,
+  Eye,
+  EyeOff,
+  MapPin,
+  FileText,
+  Banknote,
+  ImageIcon,
+  CheckCircle,
+  AlertCircle,
+  ArrowRight,
+  ArrowLeft,
+} from "lucide-react";
+import { RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
+import { auth } from "../firebase";
+
+const AUTH_BASE_API = "http://localhost:5000/api/auth";
+const AUTH_API = `${AUTH_BASE_API}/register`;
+const RESTAURANT_API = "http://localhost:5000/api/restaurants";
+
+const cuisineOptions = [
+  "North Indian",
+  "South Indian",
+  "Chinese",
+  "Biryani",
+  "Pizza",
+  "Burger",
+  "Fast Food",
+  "Bakery",
+  "Sweets",
+  "Cafe",
+  "Tandoori",
+  "Hyderabadi",
+];
+
+const businessTypes = [
+  "Restaurant",
+  "Cloud Kitchen",
+  "Hotel",
+  "Cafe",
+  "Bakery",
+  "Sweet Shop",
+];
+
+const InputField = ({
+  label,
+  name,
+  type = "text",
+  value,
+  onChange,
+  placeholder,
+  icon: Icon,
+  disabled = false,
+  multiple = false,
+}) => (
+  <div>
+    <label className="block text-sm font-medium text-black mb-1">
+      {label}
+    </label>
+
+    <div className="relative">
+      {Icon && (
+        <Icon className="absolute left-3 top-3.5 h-5 w-5 text-gray-400" />
+      )}
+
+      <input
+        type={type}
+        name={name}
+        value={type === "file" ? undefined : value || ""}
+        onChange={onChange}
+        placeholder={placeholder}
+        disabled={disabled}
+        multiple={multiple}
+        className={`w-full ${
+          Icon ? "pl-10" : "pl-4"
+        } pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-red-600 focus:ring-2 focus:ring-red-100 outline-none text-black disabled:bg-gray-100`}
+      />
+    </div>
+  </div>
+);
 
 const PartnerRegister = () => {
   const router = useRouter();
-  const [formData, setFormData] = useState({
-    name: "",
-    email: "",
-    password: "",
-    confirmPassword: "",
-    restaurantName: "",
-    phone: "",
-    agreeTerms: false
-  });
-  
+
+  const [step, setStep] = useState(1);
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpVerified, setOtpVerified] = useState(false);
+  const [confirmationResult, setConfirmationResult] = useState(null);
+  const [firebaseIdToken, setFirebaseIdToken] = useState("");
+
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
 
+  const [formData, setFormData] = useState({
+    password: "",
+    confirmPassword: "",
+    restaurantName: "",
+    ownerName: "",
+    ownerPhone: "",
+    ownerEmail: "",
+    restaurantPhone: "",
+    restaurantEmail: "",
+    address: "",
+    landmark: "",
+    pincode: "",
+    city: "",
+    state: "",
+    latitude: "",
+    longitude: "",
+    logo: null,
+    coverImage: null,
+    fssaiNumber: "",
+    fssaiDocument: null,
+    gstNumber: "",
+    gstDocument: null,
+    panNumber: "",
+    registrationCertificate: null,
+    businessType: "Restaurant",
+    cuisines: [],
+    foodType: "Both",
+    preparationTime: "",
+    minimumOrderValue: "",
+    deliveryRadius: "",
+    openingTime: "",
+    closingTime: "",
+    dineIn: "No",
+    takeaway: "Yes",
+    accountHolderName: "",
+    bankName: "",
+    accountNumber: "",
+    ifscCode: "",
+    upiId: "",
+    panCard: null,
+    cancelledCheque: null,
+    outletPhotos: [],
+    menuPdf: null,
+    aboutRestaurant: "",
+    popularDishes: "",
+    referralCode: "",
+    agreeTerms: false,
+    otp: "",
+  });
+
   const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === "checkbox" ? checked : value
-    }));
-    if (error) setError("");
-  };
-
-  const validateForm = () => {
-    if (!formData.name.trim()) {
-      setError("Full name is required");
-      return false;
-    }
-    if (!formData.email.trim()) {
-      setError("Email is required");
-      return false;
-    }
-    if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      setError("Please enter a valid email");
-      return false;
-    }
-    if (!formData.password) {
-      setError("Password is required");
-      return false;
-    }
-    if (formData.password.length < 6) {
-      setError("Password must be at least 6 characters");
-      return false;
-    }
-    if (formData.password !== formData.confirmPassword) {
-      setError("Passwords do not match");
-      return false;
-    }
-    if (!formData.restaurantName.trim()) {
-      setError("Restaurant name is required");
-      return false;
-    }
-    if (!formData.phone.trim()) {
-      setError("Phone number is required");
-      return false;
-    }
-    if (!formData.agreeTerms) {
-      setError("You must agree to the terms and conditions");
-      return false;
-    }
-    return true;
-  };
-
-  const handleRegister = async (e) => {
-    e.preventDefault();
+    const { name, value, type, checked, files } = e.target;
     setError("");
-    
-    if (!validateForm()) return;
-    
-    setIsLoading(true);
-    
+
+    if (type === "file") {
+      if (name === "outletPhotos") {
+        setFormData((prev) => ({
+          ...prev,
+          outletPhotos: Array.from(files || []),
+        }));
+      } else {
+        setFormData((prev) => ({
+          ...prev,
+          [name]: files?.[0] || null,
+        }));
+      }
+      return;
+    }
+
+    if (name === "ownerPhone") {
+      setOtpSent(false);
+      setOtpVerified(false);
+      setConfirmationResult(null);
+      setFirebaseIdToken("");
+    }
+
+    setFormData((prev) => ({
+      ...prev,
+      [name]: type === "checkbox" ? checked : value,
+    }));
+  };
+
+  const toggleCuisine = (cuisine) => {
+    setFormData((prev) => ({
+      ...prev,
+      cuisines: prev.cuisines.includes(cuisine)
+        ? prev.cuisines.filter((item) => item !== cuisine)
+        : [...prev.cuisines, cuisine],
+    }));
+  };
+
+  const getRecaptchaVerifier = () => {
+    if (!window.partnerRecaptchaVerifier) {
+      window.partnerRecaptchaVerifier = new RecaptchaVerifier(
+        auth,
+        "partner-recaptcha-container",
+        { size: "invisible" }
+      );
+    }
+
+    return window.partnerRecaptchaVerifier;
+  };
+
+  const sendOtp = async () => {
+    setError("");
+
+    if (!/^[6-9]\d{9}$/.test(formData.ownerPhone)) {
+      setError("Enter valid 10 digit Indian mobile number");
+      return;
+    }
+
     try {
-      // 🔥 FIXED: Include restaurantName in the request body
-      const userData = {
-        name: formData.name,
-        email: formData.email,
-        phone: formData.phone,
-        password: formData.password,
-        role: "partner",
-        restaurantName: formData.restaurantName // 🔥 ADDED THIS
-      };
-      
-      console.log("Sending registration request to:", 'http://localhost:5000/api/auth/register');
-      console.log("Request data:", userData);
-      
-      // Add timeout to fetch
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-      
-      const response = await fetch('http://localhost:5000/api/auth/register', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify(userData),
-        signal: controller.signal
-      });
-      
-      clearTimeout(timeoutId);
-      
-      console.log("Response status:", response.status);
-      
-      // Check if response is JSON
-      const contentType = response.headers.get('content-type');
-      let data;
-      
-      if (contentType && contentType.includes('application/json')) {
-        data = await response.json();
-        console.log("Response data:", data);
-      } else {
-        const text = await response.text();
-        console.error("Non-JSON response:", text.substring(0, 500));
-        throw new Error(`Server returned non-JSON response. Status: ${response.status}. Make sure your backend is running on port 5000.`);
-      }
-      
-      if (response.ok) {
-        // 🔥 Store user data and token
-        localStorage.setItem("token", data.token);
-        localStorage.setItem("user", JSON.stringify(data.user));
-        
-        // 🔥 Store restaurant data if returned
-        if (data.restaurant) {
-          localStorage.setItem("restaurant", JSON.stringify(data.restaurant));
-        }
-        
-        setSuccess(true);
-        
-        // Redirect after success
-        setTimeout(() => {
-          router.push("/"); // 🔥 Redirect to partner dashboard instead of home
-        }, 2000);
-      } else {
-        if (data.message?.toLowerCase().includes('already exists')) {
-          setError("An account with this email already exists. Please use a different email or login.");
-        } else if (data.message) {
-          setError(data.message);
-        } else {
-          setError("Registration failed. Please try again.");
-        }
-      }
-      
+      setIsLoading(true);
+
+      const appVerifier = getRecaptchaVerifier();
+      const result = await signInWithPhoneNumber(
+        auth,
+        `+91${formData.ownerPhone}`,
+        appVerifier
+      );
+
+      setConfirmationResult(result);
+      setOtpSent(true);
     } catch (err) {
-      console.error("Registration error:", err);
-      
-      if (err.name === 'AbortError') {
-        setError("Request timeout. Please check if backend server is running on port 5000.");
-      } else if (err.message.includes('Failed to fetch')) {
-        setError("Cannot connect to backend server. Please make sure your backend is running on http://localhost:5000");
-      } else {
-        setError(err.message || "Network error. Please check your connection and try again.");
-      }
+      console.error("Firebase OTP Error:", err);
+      setError(err.message || "OTP sending failed. Please try again.");
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleLogin = () => {
-    router.push("/login");
+  const verifyOtp = async () => {
+    setError("");
+
+    if (!otpSent) {
+      setError("Please send OTP first");
+      return;
+    }
+
+    if (!/^\d{4,8}$/.test(formData.otp)) {
+      setError("Enter valid OTP");
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+
+      if (!confirmationResult) {
+        throw new Error("Session expired. Please send OTP again");
+      }
+
+      const firebaseResult = await confirmationResult.confirm(formData.otp);
+      const verifiedIdToken = await firebaseResult.user.getIdToken();
+
+      setFirebaseIdToken(verifiedIdToken);
+      setOtpVerified(true);
+      setOtpSent(false);
+      setConfirmationResult(null);
+    } catch (err) {
+      console.error("Firebase OTP verification error:", err);
+      setError(err.message || "Invalid OTP");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const getCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      setError("Geolocation not supported");
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setFormData((prev) => ({
+          ...prev,
+          latitude: String(position.coords.latitude),
+          longitude: String(position.coords.longitude),
+        }));
+      },
+      () => setError("Unable to get location")
+    );
+  };
+
+  const validateStep = () => {
+    if (step === 1) {
+      if (!formData.restaurantName.trim()) return setError("Restaurant name required");
+      if (!formData.ownerName.trim()) return setError("Owner name required");
+      if (!formData.ownerPhone.trim()) return setError("Owner phone required");
+      if (!otpVerified) return setError("Please verify owner mobile number");
+      if (!formData.ownerEmail.trim()) return setError("Owner email required");
+      if (!formData.address.trim()) return setError("Address required");
+      if (!formData.pincode.trim()) return setError("Pincode required");
+    }
+
+    if (step === 2) {
+      if (!formData.fssaiNumber.trim()) return setError("FSSAI number required");
+      if (!formData.panNumber.trim()) return setError("PAN number required");
+    }
+
+    if (step === 3) {
+      if (formData.cuisines.length === 0) return setError("Select cuisines");
+      if (!formData.preparationTime) return setError("Preparation time required");
+      if (!formData.minimumOrderValue) return setError("Minimum order value required");
+      if (!formData.deliveryRadius) return setError("Delivery radius required");
+    }
+
+    if (step === 4) {
+      if (!formData.accountHolderName.trim()) return setError("Account holder name required");
+      if (!formData.bankName.trim()) return setError("Bank name required");
+      if (!formData.accountNumber.trim()) return setError("Account number required");
+      if (!formData.ifscCode.trim()) return setError("IFSC code required");
+    }
+
+    if (step === 6) {
+      if (!formData.password) return setError("Password required");
+      if (formData.password.length < 6) return setError("Password minimum 6 characters");
+      if (formData.password !== formData.confirmPassword) return setError("Passwords do not match");
+      if (!formData.agreeTerms) return setError("Please accept terms");
+    }
+
+    setError("");
+    return true;
+  };
+
+  const nextStep = () => {
+    if (validateStep() === true) {
+      setStep((prev) => prev + 1);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
+
+  const prevStep = () => {
+    setError("");
+    setStep((prev) => prev - 1);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    if (validateStep() !== true) return;
+
+    try {
+      setIsLoading(true);
+      setError("");
+
+      const registerResponse = await fetch(AUTH_API, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          name: formData.ownerName,
+          email: formData.ownerEmail,
+          phone: formData.ownerPhone,
+          password: formData.password,
+          role: "partner",
+          firebaseIdToken,
+        }),
+      });
+
+      const registerData = await registerResponse.json();
+
+      if (!registerResponse.ok) {
+        throw new Error(registerData.message || "Partner registration failed");
+      }
+
+      const token = registerData.token;
+
+      if (!token) {
+        throw new Error("Token not received from backend");
+      }
+
+      localStorage.setItem("token", token);
+      localStorage.setItem("user", JSON.stringify(registerData.user));
+
+      const restaurantData = new FormData();
+
+      const skipKeys = ["password", "confirmPassword", "otp", "agreeTerms"];
+
+      Object.entries(formData).forEach(([key, value]) => {
+        if (skipKeys.includes(key)) return;
+
+        if (key === "cuisines") {
+          restaurantData.append("cuisines", JSON.stringify(value));
+        } else if (key === "outletPhotos") {
+          value.forEach((file) => restaurantData.append("outletPhotos", file));
+        } else if (value !== null && value !== "") {
+          restaurantData.append(key, value);
+        }
+      });
+
+      restaurantData.append("isPhoneVerified", "true");
+
+      const restaurantResponse = await fetch(RESTAURANT_API, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: restaurantData,
+      });
+
+      const restaurantResult = await restaurantResponse.json();
+
+      if (!restaurantResponse.ok) {
+        throw new Error(restaurantResult.message || "Restaurant creation failed");
+      }
+
+      localStorage.setItem("restaurant", JSON.stringify(restaurantResult.restaurant));
+
+      setSuccess(true);
+
+      setTimeout(() => {
+        router.push("/");
+      }, 1500);
+    } catch (err) {
+      console.error("Registration error:", err);
+      setError(err.message || "Something went wrong");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   if (success) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-black via-red-950 to-black flex items-center justify-center p-4">
-        <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-2xl w-full max-w-md p-8 text-center">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-green-500 rounded-full mb-6">
-            <CheckCircle className="h-10 w-10 text-white" />
-          </div>
-          <h2 className="text-2xl font-bold text-black mb-2">Registration Successful!</h2>
-          <p className="text-gray-600 mb-2">Your partner account has been created.</p>
-          <p className="text-sm text-gray-500 mb-4">Restaurant: {formData.restaurantName}</p>
-          <p className="text-sm text-gray-500 mb-4">Redirecting to partner dashboard...</p>
-          <button
-            onClick={() => router.push("/pa")}
-            className="text-red-600 hover:text-red-700 font-medium transition-colors hover:underline"
-          >
-            Click here if not redirected
-          </button>
+      <div className="min-h-screen bg-black flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl p-8 text-center max-w-md w-full">
+          <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-black">
+            Registration Successful
+          </h2>
+          <p className="text-gray-600 mt-2">
+            Partner and restaurant saved successfully.
+          </p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-black via-red-950 to-black flex items-center justify-center p-4 relative overflow-hidden">
-      {/* Animated background elements */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-red-600 rounded-full opacity-20 animate-pulse"></div>
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-red-600 rounded-full opacity-20 animate-pulse delay-1000"></div>
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-red-500 rounded-full opacity-5 blur-3xl"></div>
-      </div>
+    <div className="min-h-screen bg-gradient-to-br from-black via-red-950 to-black p-4">
+      <div className="max-w-5xl mx-auto bg-white rounded-2xl shadow-2xl overflow-hidden">
+        <div className="h-2 bg-gradient-to-r from-red-600 to-black"></div>
 
-      {/* Main card */}
-      <div className="relative bg-white/95 backdrop-blur-sm rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden border border-red-100 transform transition-all duration-300 hover:scale-[1.01]">
-        {/* Top gradient bar */}
-        <div className="h-2 bg-gradient-to-r from-red-600 via-red-500 to-black"></div>
-        
-        <div className="p-8">
-          {/* Logo and Branding */}
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-red-600 to-black rounded-2xl mb-4 shadow-lg transform rotate-3 hover:rotate-0 transition-transform duration-300">
-              <span className="text-3xl font-bold text-white">P</span>
+        <div className="p-6 md:p-8">
+          <div className="text-center mb-6">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-red-600 to-black rounded-2xl mb-3">
+              <Store className="text-white h-8 w-8" />
             </div>
             <h1 className="text-3xl font-bold text-black">
-              Partner Registration
+              Partner Restaurant Registration
             </h1>
-            <p className="text-gray-600 text-sm mt-2">
-              Join our restaurant partner network
-            </p>
+            <p className="text-gray-500 mt-1">Step {step} of 6</p>
           </div>
 
-          {/* Error Message */}
+          <div className="w-full bg-gray-200 rounded-full h-2 mb-6">
+            <div
+              className="bg-red-600 h-2 rounded-full transition-all"
+              style={{ width: `${(step / 6) * 100}%` }}
+            ></div>
+          </div>
+
           {error && (
-            <div className="mb-4 p-3 bg-red-50 border-l-4 border-red-500 rounded-lg">
-              <div className="flex items-center gap-2">
-                <AlertCircle className="h-4 w-4 text-red-500" />
-                <p className="text-sm text-red-600">{error}</p>
-              </div>
+            <div className="mb-5 p-3 bg-red-50 border-l-4 border-red-500 rounded-lg flex gap-2">
+              <AlertCircle className="h-5 w-5 text-red-500" />
+              <p className="text-sm text-red-600">{error}</p>
             </div>
           )}
 
-          {/* Registration Form */}
-          <form onSubmit={handleRegister} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Full Name */}
-              <div className="space-y-1">
-                <label className="block text-sm font-medium text-black ml-1">
-                  Full Name *
-                </label>
-                <div className="relative group">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <User className="h-5 w-5 text-gray-400 group-focus-within:text-red-600 transition-colors" />
-                  </div>
-                  <input
-                    type="text"
-                    name="name"
-                    value={formData.name}
-                    onChange={handleChange}
-                    className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-red-600 focus:ring-2 focus:ring-red-200 outline-none transition-all bg-white text-black placeholder-gray-400"
-                    placeholder="John Doe"
-                    required
-                  />
-                </div>
-              </div>
+          <form onSubmit={handleSubmit}>
+            {step === 1 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <InputField label="Restaurant / Hotel Name *" name="restaurantName" value={formData.restaurantName} onChange={handleChange} icon={Store} />
+                <InputField label="Owner Name *" name="ownerName" value={formData.ownerName} onChange={handleChange} icon={User} />
 
-              {/* Email */}
-              <div className="space-y-1">
-                <label className="block text-sm font-medium text-black ml-1">
-                  Email Address *
-                </label>
-                <div className="relative group">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Mail className="h-5 w-5 text-gray-400 group-focus-within:text-red-600 transition-colors" />
-                  </div>
-                  <input
-                    type="email"
-                    name="email"
-                    value={formData.email}
-                    onChange={handleChange}
-                    className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-red-600 focus:ring-2 focus:ring-red-200 outline-none transition-all bg-white text-black placeholder-gray-400"
-                    placeholder="partner@restaurant.com"
-                    required
-                  />
-                </div>
-              </div>
+                <div>
+                  <label className="block text-sm font-medium text-black mb-1">
+                    Owner Phone Number *
+                  </label>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Phone className="absolute left-3 top-3.5 h-5 w-5 text-gray-400" />
+                      <input
+                        type="tel"
+                        name="ownerPhone"
+                        value={formData.ownerPhone}
+                        onChange={handleChange}
+                        disabled={otpVerified}
+                        placeholder="9876543210"
+                        maxLength={10}
+                        className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-red-600 focus:ring-2 focus:ring-red-100 outline-none text-black disabled:bg-gray-100"
+                      />
+                    </div>
 
-              {/* Restaurant Name */}
-              <div className="space-y-1">
-                <label className="block text-sm font-medium text-black ml-1">
-                  Restaurant Name *
-                </label>
-                <div className="relative group">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Store className="h-5 w-5 text-gray-400 group-focus-within:text-red-600 transition-colors" />
+                    {!otpVerified ? (
+                      <button type="button" onClick={sendOtp} disabled={isLoading} className="px-4 py-2 bg-red-600 text-white rounded-xl disabled:opacity-60">
+                        {otpSent ? "Resend" : "Verify"}
+                      </button>
+                    ) : (
+                      <span className="px-4 py-3 bg-green-100 text-green-700 rounded-xl text-sm">
+                        Verified
+                      </span>
+                    )}
                   </div>
-                  <input
-                    type="text"
-                    name="restaurantName"
-                    value={formData.restaurantName}
-                    onChange={handleChange}
-                    className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-red-600 focus:ring-2 focus:ring-red-200 outline-none transition-all bg-white text-black placeholder-gray-400"
-                    placeholder="La Bella Italia"
-                    required
-                  />
+                  {otpSent && !otpVerified && (
+                    <div className="flex gap-2 mt-2">
+                      <input
+                        type="text"
+                        name="otp"
+                        value={formData.otp}
+                        onChange={handleChange}
+                        placeholder="Enter OTP"
+                        maxLength={8}
+                        className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-red-600 focus:ring-2 focus:ring-red-100 outline-none text-black"
+                      />
+                      <button type="button" onClick={verifyOtp} disabled={isLoading} className="px-4 py-2 bg-black text-white rounded-xl disabled:opacity-60">
+                        Confirm
+                      </button>
+                    </div>
+                  )}
+                  <div id="partner-recaptcha-container" />
                 </div>
-                <p className="text-xs text-gray-500 ml-1">This will be your restaurant's display name</p>
-              </div>
 
-              {/* Phone */}
-              <div className="space-y-1">
-                <label className="block text-sm font-medium text-black ml-1">
-                  Phone Number *
-                </label>
-                <div className="relative group">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Phone className="h-5 w-5 text-gray-400 group-focus-within:text-red-600 transition-colors" />
-                  </div>
-                  <input
-                    type="tel"
-                    name="phone"
-                    value={formData.phone}
-                    onChange={handleChange}
-                    className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-red-600 focus:ring-2 focus:ring-red-200 outline-none transition-all bg-white text-black placeholder-gray-400"
-                    placeholder="+1 234 567 8900"
-                    required
-                  />
-                </div>
-              </div>
+                <InputField label="Owner Email ID *" name="ownerEmail" type="email" value={formData.ownerEmail} onChange={handleChange} icon={Mail} />
+                <InputField label="Restaurant Phone Number" name="restaurantPhone" value={formData.restaurantPhone} onChange={handleChange} icon={Phone} />
+                <InputField label="Restaurant Email ID" name="restaurantEmail" type="email" value={formData.restaurantEmail} onChange={handleChange} icon={Mail} />
+                <InputField label="Full Address *" name="address" value={formData.address} onChange={handleChange} icon={MapPin} />
+                <InputField label="Landmark" name="landmark" value={formData.landmark} onChange={handleChange} />
+                <InputField label="Pincode *" name="pincode" value={formData.pincode} onChange={handleChange} />
+                <InputField label="City" name="city" value={formData.city} onChange={handleChange} />
+                <InputField label="State" name="state" value={formData.state} onChange={handleChange} />
 
-              {/* Password */}
-              <div className="space-y-1">
-                <label className="block text-sm font-medium text-black ml-1">
-                  Password *
-                </label>
-                <div className="relative group">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Lock className="h-5 w-5 text-gray-400 group-focus-within:text-red-600 transition-colors" />
-                  </div>
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    name="password"
-                    value={formData.password}
-                    onChange={handleChange}
-                    className="w-full pl-10 pr-12 py-3 border-2 border-gray-200 rounded-xl focus:border-red-600 focus:ring-2 focus:ring-red-200 outline-none transition-all bg-white text-black placeholder-gray-400"
-                    placeholder="••••••••"
-                    required
-                    minLength={6}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-red-600 transition-colors"
-                  >
-                    {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                <div className="md:col-span-2">
+                  <button type="button" onClick={getCurrentLocation} className="px-4 py-3 bg-black text-white rounded-xl">
+                    Use Current Location
                   </button>
                 </div>
-              </div>
 
-              {/* Confirm Password */}
-              <div className="space-y-1">
-                <label className="block text-sm font-medium text-black ml-1">
-                  Confirm Password *
-                </label>
-                <div className="relative group">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Lock className="h-5 w-5 text-gray-400 group-focus-within:text-red-600 transition-colors" />
-                  </div>
-                  <input
-                    type={showConfirmPassword ? "text" : "password"}
-                    name="confirmPassword"
-                    value={formData.confirmPassword}
-                    onChange={handleChange}
-                    className="w-full pl-10 pr-12 py-3 border-2 border-gray-200 rounded-xl focus:border-red-600 focus:ring-2 focus:ring-red-200 outline-none transition-all bg-white text-black placeholder-gray-400"
-                    placeholder="••••••••"
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-red-600 transition-colors"
-                  >
-                    {showConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                  </button>
+                <InputField label="Latitude" name="latitude" value={formData.latitude} onChange={handleChange} />
+                <InputField label="Longitude" name="longitude" value={formData.longitude} onChange={handleChange} />
+                <InputField label="Restaurant Logo" name="logo" type="file" onChange={handleChange} icon={ImageIcon} />
+                <InputField label="Cover / Banner Image" name="coverImage" type="file" onChange={handleChange} icon={ImageIcon} />
+              </div>
+            )}
+
+            {step === 2 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <InputField label="FSSAI License Number " name="fssaiNumber" value={formData.fssaiNumber} onChange={handleChange} icon={FileText} />
+                <InputField label="Upload FSSAI Document" name="fssaiDocument" type="file" onChange={handleChange} />
+                <InputField label="GST Number" name="gstNumber" value={formData.gstNumber} onChange={handleChange} />
+                <InputField label="Upload GST Certificate" name="gstDocument" type="file" onChange={handleChange} />
+                <InputField label="PAN Card Number " name="panNumber" value={formData.panNumber} onChange={handleChange} />
+                <InputField label="Registration Certificate Optional" name="registrationCertificate" type="file" onChange={handleChange} />
+
+                <div>
+                  <label className="block text-sm font-medium text-black mb-1">
+                    Type of Business
+                  </label>
+                  <select name="businessType" value={formData.businessType} onChange={handleChange} className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-black">
+                    {businessTypes.map((type) => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
-            </div>
+            )}
 
-            {/* Password Hint */}
-            <p className="text-xs text-gray-500 ml-1 -mt-2">Minimum 6 characters</p>
+            {step === 3 && (
+              <div className="space-y-5">
+                <div>
+                  <label className="block text-sm font-medium text-black mb-2">
+                    Cuisines *
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {cuisineOptions.map((cuisine) => (
+                      <button
+                        type="button"
+                        key={cuisine}
+                        onClick={() => toggleCuisine(cuisine)}
+                        className={`px-4 py-2 rounded-full border ${
+                          formData.cuisines.includes(cuisine)
+                            ? "bg-red-600 text-white border-red-600"
+                            : "bg-white text-black border-gray-300"
+                        }`}
+                      >
+                        {cuisine}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-            {/* Terms and Conditions */}
-            <div className="flex items-start gap-3 mt-4">
-              <input
-                type="checkbox"
-                name="agreeTerms"
-                checked={formData.agreeTerms}
-                onChange={handleChange}
-                className="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500 focus:ring-2 cursor-pointer mt-1"
-                required
-              />
-              <label className="text-sm text-black">
-                I agree to the{" "}
-                <button
-                  type="button"
-                  className="text-red-600 hover:text-red-700 font-medium hover:underline"
-                >
-                  Terms of Service
-                </button>{" "}
-                and{" "}
-                <button
-                  type="button"
-                  className="text-red-600 hover:text-red-700 font-medium hover:underline"
-                >
-                  Privacy Policy
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-black mb-1">
+                      Food Type
+                    </label>
+                    <select name="foodType" value={formData.foodType} onChange={handleChange} className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-black">
+                      <option>Pure Veg</option>
+                      <option>Non-Veg</option>
+                      <option>Both</option>
+                      <option>Jain</option>
+                    </select>
+                  </div>
+
+                  <InputField label="Average Preparation Time Minutes *" name="preparationTime" type="number" value={formData.preparationTime} onChange={handleChange} />
+                  <InputField label="Minimum Order Value *" name="minimumOrderValue" type="number" value={formData.minimumOrderValue} onChange={handleChange} />
+                  <InputField label="Delivery Radius KM *" name="deliveryRadius" type="number" value={formData.deliveryRadius} onChange={handleChange} />
+                  <InputField label="Opening Time" name="openingTime" type="time" value={formData.openingTime} onChange={handleChange} />
+                  <InputField label="Closing Time" name="closingTime" type="time" value={formData.closingTime} onChange={handleChange} />
+
+                  <div>
+                    <label className="block text-sm font-medium text-black mb-1">Dine-in Support</label>
+                    <select name="dineIn" value={formData.dineIn} onChange={handleChange} className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-black">
+                      <option>Yes</option>
+                      <option>No</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-black mb-1">Takeaway Support</label>
+                    <select name="takeaway" value={formData.takeaway} onChange={handleChange} className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-black">
+                      <option>Yes</option>
+                      <option>No</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {step === 4 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <InputField label="Account Holder Name *" name="accountHolderName" value={formData.accountHolderName} onChange={handleChange} icon={Banknote} />
+                <InputField label="Bank Name *" name="bankName" value={formData.bankName} onChange={handleChange} />
+                <InputField label="Account Number *" name="accountNumber" value={formData.accountNumber} onChange={handleChange} />
+                <InputField label="IFSC Code *" name="ifscCode" value={formData.ifscCode} onChange={handleChange} />
+                <InputField label="UPI ID Optional" name="upiId" value={formData.upiId} onChange={handleChange} />
+              </div>
+            )}
+
+            {step === 5 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <InputField label="PAN Card Upload" name="panCard" type="file" onChange={handleChange} />
+                <InputField label="Cancelled Cheque / Passbook Photo" name="cancelledCheque" type="file" onChange={handleChange} />
+                <InputField label="Shop / Outlet Photos Minimum 2-3" name="outletPhotos" type="file" onChange={handleChange} multiple />
+                <InputField label="Menu PDF Optional" name="menuPdf" type="file" onChange={handleChange} />
+              </div>
+            )}
+
+            {step === 6 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-black mb-1">
+                    About Restaurant
+                  </label>
+                  <textarea name="aboutRestaurant" value={formData.aboutRestaurant} onChange={handleChange} rows={4} className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-black focus:border-red-600 outline-none" />
+                </div>
+
+                <InputField label="Popular Dishes" name="popularDishes" value={formData.popularDishes} onChange={handleChange} />
+                <InputField label="Referral Code" name="referralCode" value={formData.referralCode} onChange={handleChange} />
+
+                <div>
+                  <label className="block text-sm font-medium text-black mb-1">Password *</label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-3.5 h-5 w-5 text-gray-400" />
+                    <input type={showPassword ? "text" : "password"} name="password" value={formData.password} onChange={handleChange} className="w-full pl-10 pr-12 py-3 border-2 border-gray-200 rounded-xl focus:border-red-600 outline-none text-black" />
+                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-3.5">
+                      {showPassword ? <EyeOff /> : <Eye />}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-black mb-1">Confirm Password *</label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-3.5 h-5 w-5 text-gray-400" />
+                    <input type={showConfirmPassword ? "text" : "password"} name="confirmPassword" value={formData.confirmPassword} onChange={handleChange} className="w-full pl-10 pr-12 py-3 border-2 border-gray-200 rounded-xl focus:border-red-600 outline-none text-black" />
+                    <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3 top-3.5">
+                      {showConfirmPassword ? <EyeOff /> : <Eye />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="md:col-span-2 flex gap-2">
+                  <input type="checkbox" name="agreeTerms" checked={formData.agreeTerms} onChange={handleChange} />
+                  <p className="text-sm text-black">
+                    I agree to the Terms and Conditions
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-between mt-8">
+              {step > 1 ? (
+                <button type="button" onClick={prevStep} className="px-5 py-3 bg-gray-200 text-black rounded-xl flex items-center gap-2">
+                  <ArrowLeft size={18} /> Back
                 </button>
-              </label>
+              ) : (
+                <div />
+              )}
+
+              {step < 6 ? (
+                <button type="button" onClick={nextStep} className="px-5 py-3 bg-red-600 text-white rounded-xl flex items-center gap-2">
+                  Next <ArrowRight size={18} />
+                </button>
+              ) : (
+                <button type="submit" disabled={isLoading} className="px-6 py-3 bg-gradient-to-r from-red-600 to-black text-white rounded-xl disabled:opacity-60">
+                  {isLoading ? "Submitting..." : "Submit Registration"}
+                </button>
+              )}
             </div>
-
-            {/* Register Button */}
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full bg-gradient-to-r from-red-600 to-black text-white font-semibold py-3 px-4 rounded-xl transition-all duration-200 transform hover:scale-[1.02] hover:shadow-xl disabled:opacity-70 disabled:cursor-not-allowed disabled:hover:scale-100 relative overflow-hidden group mt-6"
-            >
-              <span className="relative z-10 flex items-center justify-center gap-2">
-                {isLoading ? (
-                  <>
-                    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    <span>Creating Partner Account...</span>
-                  </>
-                ) : (
-                  <>
-                    <span>Create Partner Account</span>
-                    <ArrowRight className="h-5 w-5 group-hover:translate-x-1 transition-transform" />
-                  </>
-                )}
-              </span>
-              <div className="absolute inset-0 bg-gradient-to-r from-red-700 to-black opacity-0 group-hover:opacity-100 transition-opacity"></div>
-            </button>
-
-            {/* Login Link */}
-            <p className="text-center text-sm text-gray-600 mt-6">
-              Already have a partner account?{" "}
-              <button
-                type="button"
-                onClick={handleLogin}
-                className="text-red-600 hover:text-red-700 font-medium transition-colors hover:underline"
-              >
-                Sign in here
-              </button>
-            </p>
           </form>
-
-          {/* Divider */}
-          <div className="relative my-6">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-200"></div>
-            </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-white text-gray-500">Partner registration</span>
-            </div>
-          </div>
-
-          {/* Info Box */}
-          <div className="bg-gradient-to-r from-red-50 to-orange-50 rounded-xl p-4 border border-red-100">
-            <p className="text-xs font-semibold text-red-600 mb-2">✨ Partner Benefits:</p>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <span className="text-gray-700">• Restaurant dashboard</span>
-              <span className="text-gray-700">• Order management system</span>
-              <span className="text-gray-700">• Real-time analytics</span>
-              <span className="text-gray-700">• Menu management tools</span>
-              <span className="text-gray-700">• Sales reports</span>
-              <span className="text-gray-700">• Customer insights</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="bg-gradient-to-r from-gray-50 to-white px-8 py-4 border-t border-gray-100">
-          <p className="text-xs text-gray-500 text-center">
-            © 2024 Partner Portal. Secure registration powered by industry-grade encryption.
-          </p>
         </div>
       </div>
     </div>

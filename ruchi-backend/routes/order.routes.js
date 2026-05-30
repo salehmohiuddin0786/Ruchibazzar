@@ -8,25 +8,15 @@ const { protect, authorize } = require("../middlewares/auth.middleware");
 
 /*
 ---------------------------------------
-📦 ORDER ROUTES (CUSTOMER)
+📦 CUSTOMER ROUTES
 ---------------------------------------
 */
 
-// ✅ Create Order
-router.post(
-  "/",
-  protect,
-  authorize("customer"),
-  orderController.createOrder
-);
+router.post("/", protect, authorize("customer"), orderController.createOrder);
 
-// ✅ Get My Orders
-router.get(
-  "/my-orders",
-  protect,
-  authorize("customer"),
-  orderController.getUserOrders
-);
+// ✅ BOTH ROUTES (no mismatch issue)
+router.get("/user", protect, authorize("customer"), orderController.getUserOrders);
+router.get("/my-orders", protect, authorize("customer"), orderController.getUserOrders);
 
 /*
 ---------------------------------------
@@ -34,93 +24,39 @@ router.get(
 ---------------------------------------
 */
 
-// ✅ Get Restaurant Orders
 router.get(
   "/restaurant/:restaurantId",
   protect,
-  authorize("admin", "restaurant"),
+  authorize("admin", "partner"),
   orderController.getRestaurantOrders
 );
 
-// ✅ Update Order Status
 router.put(
   "/:id/status",
   protect,
-  authorize("admin", "restaurant"),
+  authorize("admin", "partner"),
   orderController.updateOrderStatus
 );
 
 /*
 ---------------------------------------
-🚚 DELIVERY ROUTES (SAFE VERSION)
+🚚 DELIVERY ROUTES
 ---------------------------------------
 */
 
-// 🔥 IMPORTANT: Validate controller exists before using
-
-if (!deliveryController) {
-  throw new Error("deliveryController not found");
-}
-
-// ✅ Assign Delivery Partner (ADMIN)
-router.put(
-  "/:id/assign",
-  protect,
-  authorize("admin"),
-  deliveryController.assignDeliveryPartner
-);
-
-// ✅ Get My Deliveries
-router.get(
-  "/delivery/my-orders",
-  protect,
-  authorize("partner"),
-  deliveryController.getMyDeliveries
-);
-
-// ✅ Pickup Order
-router.put(
-  "/:id/pick",
-  protect,
-  authorize("partner"),
-  deliveryController.pickOrder
-);
-
-// ✅ Start Delivery
-router.put(
-  "/:id/start",
-  protect,
-  authorize("partner"),
-  deliveryController.startDelivery
-);
-
-// ✅ Complete Delivery
-router.put(
-  "/:id/deliver",
-  protect,
-  authorize("partner"),
-  deliveryController.completeDelivery
-);
-
-// ✅ Update Live Location
-router.put(
-  "/:id/location",
-  protect,
-  authorize("partner"),
-  deliveryController.updateLocation
-);
+router.put("/:id/assign", protect, authorize("admin"), deliveryController.assignDeliveryPartner);
+router.get("/delivery/my-orders", protect, authorize("partner"), deliveryController.getMyDeliveries);
+router.put("/:id/pick", protect, authorize("partner"), deliveryController.pickOrder);
+router.put("/:id/start", protect, authorize("partner"), deliveryController.startDelivery);
+router.put("/:id/deliver", protect, authorize("partner"), deliveryController.completeDelivery);
+router.put("/:id/location", protect, authorize("partner"), deliveryController.updateLocation);
 
 /*
 ---------------------------------------
-📄 COMMON ROUTES
+📄 COMMON
 ---------------------------------------
 */
 
-// ⚠️ KEEP LAST (VERY IMPORTANT)
-router.get(
-  "/:id",
-  protect,
-  orderController.getOrderById
-);
+router.get("/:id", protect, orderController.getOrderById);
 
 module.exports = router;

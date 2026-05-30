@@ -1,5 +1,6 @@
 const express = require("express");
 const cors = require("cors");
+const path = require("path");
 
 const apiLimiter = require("./middlewares/rateLimit.middleware");
 const { errorHandler } = require("./middlewares/error.middleware");
@@ -14,7 +15,6 @@ const app = express();
 |--------------------------------------------------------------------------
 */
 
-// ✅ CORS (improved)
 app.use(
   cors({
     origin: [
@@ -27,11 +27,11 @@ app.use(
 );
 
 // ✅ Body parsers
-app.use(express.json({ limit: "10kb" }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: "5mb" }));
+app.use(express.urlencoded({ extended: true, limit: "5mb" }));
 
 // ✅ Static uploads
-app.use("/uploads", express.static("uploads"));
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 /*
 |--------------------------------------------------------------------------
@@ -46,7 +46,7 @@ app.use("/api", apiLimiter);
 |--------------------------------------------------------------------------
 */
 
-// 🔐 Auth (OTP + Password)
+// 🔐 Auth
 app.use("/api/auth", require("./routes/auth.routes"));
 
 // 👤 Users
@@ -72,6 +72,7 @@ app.use("/api/offers", require("./routes/offer.routes"));
 app.use("/api/banners", require("./routes/banner.routes"));
 app.use("/api/cart", require("./routes/cart.routes"));
 app.use("/api", require("./routes/recaptcha.routes"));
+
 /*
 |--------------------------------------------------------------------------
 | Health Check
@@ -89,7 +90,7 @@ app.get("/", (req, res) => {
 | 404 Handler
 |--------------------------------------------------------------------------
 */
-app.use((req, res, next) => {
+app.use((req, res) => {
   res.status(404).json({
     success: false,
     message: "Route not found",

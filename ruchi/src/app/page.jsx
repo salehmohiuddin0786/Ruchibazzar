@@ -181,7 +181,7 @@ const Page = () => {
       
       if (response.ok) {
         const data = await response.json();
-        setNearbyRestaurants(data);
+        setNearbyRestaurants(normalizeListResponse(data, "restaurants"));
       } else {
         console.log('Using fallback nearby restaurants');
         setNearbyRestaurants(getFallbackRestaurants().slice(0, 3));
@@ -193,6 +193,18 @@ const Page = () => {
       setLoading(prev => ({ ...prev, nearby: false }));
     }
   };
+
+  const normalizeListResponse = (data, key) => {
+    if (Array.isArray(data)) return data;
+    if (Array.isArray(data?.[key])) return data[key];
+    if (Array.isArray(data?.data)) return data.data;
+    if (Array.isArray(data?.items)) return data.items;
+    return [];
+  };
+
+  const getCartItemsFromResponse = (data) => normalizeListResponse(data, "items");
+
+  const getDishFromCartItem = (item) => item.Dish || item.dish;
 
   // Get or create cart ID
   const getCartId = () => {
@@ -223,18 +235,19 @@ const Page = () => {
 
       const response = await fetch(`${apiUrl}/Cart/${cartId}`);
       if (response.ok) {
-        const cartItems = await response.json();
+        const cartItems = getCartItemsFromResponse(await response.json());
         
         const cartState = {};
         cartItems.forEach(item => {
-          if (item.Dish) {
+          const dish = getDishFromCartItem(item);
+          if (dish) {
             cartState[item.dishId] = {
               id: item.dishId,
-              name: item.Dish.name,
-              price: item.Dish.price,
+              name: dish.name,
+              price: dish.price,
               quantity: item.quantity,
-              image: item.Dish.image,
-              restaurantId: item.Dish.restaurantId
+              image: dish.image,
+              restaurantId: dish.restaurantId
             };
           }
         });
@@ -292,7 +305,7 @@ const Page = () => {
       const response = await fetch(`${apiUrl}/Cart/${cartId}`);
       if (!response.ok) throw new Error('Failed to fetch cart');
       
-      const cartItems = await response.json();
+      const cartItems = getCartItemsFromResponse(await response.json());
       const cartItem = cartItems.find(item => item.dishId === dishId);
       
       if (cartItem) {
@@ -348,7 +361,7 @@ const Page = () => {
       const response = await fetch(`${apiUrl}/Cart/${cartId}`);
       if (!response.ok) throw new Error('Failed to fetch cart');
       
-      const cartItems = await response.json();
+      const cartItems = getCartItemsFromResponse(await response.json());
       const cartItem = cartItems.find(item => item.dishId === dishId);
       
       if (cartItem) {
@@ -463,9 +476,10 @@ const Page = () => {
       const response = await fetch(`${apiUrl}/restaurants?limit=6`);
       if (!response.ok) throw new Error('Failed to fetch restaurants');
       const data = await response.json();
+      const restaurants = normalizeListResponse(data, "restaurants");
       
       // Transform restaurants data
-      const transformedRestaurants = data.map((restaurant, index) => ({
+      const transformedRestaurants = restaurants.map((restaurant, index) => ({
         id: restaurant.id,
         name: restaurant.name,
         description: restaurant.description || 'Authentic cuisine restaurant',

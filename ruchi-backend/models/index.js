@@ -1,5 +1,6 @@
 const { sequelize } = require("../config/db");
 
+/* ================= MODELS ================= */
 const User = require("./user.model")(sequelize);
 const Restaurant = require("./restaurant.model")(sequelize);
 const Dish = require("./dish.model")(sequelize);
@@ -11,58 +12,69 @@ const Review = require("./review.model")(sequelize);
 const Offer = require("./offer.model")(sequelize);
 const Banner = require("./banner.model")(sequelize);
 const AuditLog = require("./auditLog.model")(sequelize);
-const Cart = require("./Cart.model")(sequelize); // ✅ ADD CART MODEL
+const Cart = require("./cart.model")(sequelize);
 
-/* ================= RELATIONS ================= */
+/* ================= ASSOCIATIONS ================= */
+const initAssociations = () => {
 
-// User ↔ Restaurant
-User.hasMany(Restaurant, { foreignKey: "ownerId" });
-Restaurant.belongsTo(User, { foreignKey: "ownerId" });
+  /* ---------- USER ---------- */
+  User.hasMany(Restaurant, { foreignKey: "ownerId", as: "restaurants" });
+  Restaurant.belongsTo(User, { foreignKey: "ownerId", as: "owner" });
 
-// Restaurant ↔ Dish
-Restaurant.hasMany(Dish, { foreignKey: "restaurantId" });
-Dish.belongsTo(Restaurant, { foreignKey: "restaurantId" });
+  User.hasMany(Order, { foreignKey: "userId", as: "orders" });
+  Order.belongsTo(User, { foreignKey: "userId", as: "user" });
 
-// User ↔ Order
-User.hasMany(Order, { foreignKey: "userId" });
-Order.belongsTo(User, { foreignKey: "userId" });
+  User.hasMany(Review, { foreignKey: "userId", as: "reviews" });
+  Review.belongsTo(User, { foreignKey: "userId", as: "user" });
 
-// Restaurant ↔ Order
-Restaurant.hasMany(Order, { foreignKey: "restaurantId" });
-Order.belongsTo(Restaurant, { foreignKey: "restaurantId" });
 
-// Order ↔ OrderItem
-Order.hasMany(OrderItem, { foreignKey: "orderId" });
-OrderItem.belongsTo(Order, { foreignKey: "orderId" });
+  /* ---------- RESTAURANT ---------- */
+  Restaurant.hasMany(Dish, { foreignKey: "restaurantId", as: "dishes" });
+  Dish.belongsTo(Restaurant, { foreignKey: "restaurantId", as: "restaurant" });
 
-// Dish ↔ OrderItem
-Dish.hasMany(OrderItem, { foreignKey: "dishId" });
-OrderItem.belongsTo(Dish, { foreignKey: "dishId" });
+  Restaurant.hasMany(Order, { foreignKey: "restaurantId", as: "orders" });
+  Order.belongsTo(Restaurant, { foreignKey: "restaurantId", as: "restaurant" });
 
-// DeliveryPartner ↔ Order
-DeliveryPartner.hasMany(Order, { foreignKey: "deliveryPartnerId" });
-Order.belongsTo(DeliveryPartner, { foreignKey: "deliveryPartnerId" });
+  Restaurant.hasMany(Review, { foreignKey: "restaurantId", as: "reviews" });
+  Review.belongsTo(Restaurant, { foreignKey: "restaurantId", as: "restaurant" });
 
-// Restaurant ↔ Review
-Restaurant.hasMany(Review, { foreignKey: "restaurantId" });
-Review.belongsTo(Restaurant, { foreignKey: "restaurantId" });
+  Restaurant.hasMany(Offer, { foreignKey: "restaurantId", as: "offers" });
+  Offer.belongsTo(Restaurant, { foreignKey: "restaurantId", as: "restaurant" });
 
-// User ↔ Review
-User.hasMany(Review, { foreignKey: "userId" });
-Review.belongsTo(User, { foreignKey: "userId" });
 
-// Restaurant ↔ Offer
-Restaurant.hasMany(Offer, { foreignKey: "restaurantId" });
-Offer.belongsTo(Restaurant, { foreignKey: "restaurantId" });
+  /* ---------- ORDER ---------- */
+  Order.hasMany(OrderItem, { foreignKey: "orderId", as: "orderItems" });
+  OrderItem.belongsTo(Order, { foreignKey: "orderId", as: "order" });
 
-// Order ↔ Earning
-Order.hasOne(Earning, { foreignKey: "orderId" });
-Earning.belongsTo(Order, { foreignKey: "orderId" });
+  Order.hasOne(Earning, { foreignKey: "orderId", as: "earning" });
+  Earning.belongsTo(Order, { foreignKey: "orderId", as: "order" });
 
-// ✅ CART RELATION
-Dish.hasMany(Cart, { foreignKey: "dishId" });
-Cart.belongsTo(Dish, { foreignKey: "dishId" });
+  DeliveryPartner.hasMany(Order, {
+    foreignKey: "deliveryPartnerId",
+    as: "deliveries",
+  });
 
+  Order.belongsTo(DeliveryPartner, {
+    foreignKey: "deliveryPartnerId",
+    as: "deliveryPartner",
+  });
+
+
+  /* ---------- DISH ---------- */
+  Dish.hasMany(OrderItem, { foreignKey: "dishId", as: "orderItems" });
+  OrderItem.belongsTo(Dish, { foreignKey: "dishId", as: "dish" });
+
+  // ✅ CART RELATION (IMPORTANT FIX)
+  Dish.hasMany(Cart, { foreignKey: "dishId", as: "cartItems" });
+
+  // ⚠️ FIX: use SAME alias everywhere ("dish")
+  Cart.belongsTo(Dish, { foreignKey: "dishId", as: "dish" });
+};
+
+/* ================= SAFE INIT ================= */
+initAssociations();
+
+/* ================= EXPORTS ================= */
 module.exports = {
   sequelize,
   User,
@@ -76,5 +88,5 @@ module.exports = {
   Offer,
   Banner,
   AuditLog,
-  Cart, // ✅ EXPORT CART
+  Cart,
 };

@@ -1,64 +1,72 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { useAuth } from '../context/AuthContext.jsx';
-import Navbar from '../components/Navbar';
-import Footer from '../components/Footer';
-import { 
-  User, 
-  MapPin, 
-  Phone, 
-  Mail, 
-  CreditCard, 
-  Shield,
+import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "../context/AuthContext.jsx";
+import Navbar from "../components/Navbar";
+import Footer from "../components/Footer";
+import {
+  User,
+  MapPin,
+  Phone,
+  Mail,
+  CreditCard,
   Heart,
   Clock,
   Award,
   Settings,
   Edit,
   Bell,
-  Lock,
   HelpCircle,
   LogOut,
   ShoppingBag,
   Star,
-  Truck,
   Package,
   Calendar,
   Gift,
   Utensils,
-  Save,
   X,
   Check,
   AlertCircle,
   Loader,
   Plus,
   Trash2,
-  ChevronRight,
   Home,
   Briefcase,
-  MapPinned
-} from 'lucide-react';
+  Camera,
+  TrendingUp,
+  Coffee,
+  Zap,
+  Sparkles,
+  Crown,
+  BadgeCheck,
+  Navigation,
+} from "lucide-react";
 
 const Page = () => {
   const router = useRouter();
   const { user, isAuthenticated, loading: authLoading, logout } = useAuth();
-  
-  const [activeTab, setActiveTab] = useState('profile');
+
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+  const currencySymbol = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || "₹";
+
+  const [activeTab, setActiveTab] = useState("profile");
   const [loading, setLoading] = useState(true);
+  const [locationLoading, setLocationLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
-  
-  // User Data States
+
   const [userData, setUserData] = useState({
-    name: '',
-    email: '',
-    phone: '',
+    name: "",
+    email: "",
+    phone: "",
     profilePic: null,
-    joinDate: '',
+    joinDate: "",
     loyaltyPoints: 0,
-    membershipLevel: 'Bronze Member'
+    membershipLevel: "Bronze Member",
+    bio: "",
+    location: "",
+    favoriteFood: "",
   });
 
   const [addresses, setAddresses] = useState([]);
@@ -66,46 +74,41 @@ const Page = () => {
   const [orders, setOrders] = useState([]);
   const [favorites, setFavorites] = useState([]);
   const [notifications, setNotifications] = useState([]);
-  const [rewards, setRewards] = useState([]);
+  const [rewards] = useState([]);
+
   const [stats, setStats] = useState({
     totalOrders: 0,
-    totalSpent: '₹0',
-    favoriteRestaurant: '',
-    favoriteCuisine: '',
-    averageRating: 0,
-    deliveryStreak: 0
+    totalSpent: `${currencySymbol}0`,
+    favoriteRestaurant: "N/A",
+    favoriteCuisine: "North Indian",
+    averageRating: 4.8,
+    deliveryStreak: 5,
   });
 
-  // Form States
   const [editingProfile, setEditingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState({
-    name: '',
-    phone: '',
-    email: ''
+    name: "",
+    phone: "",
+    email: "",
+    bio: "",
+    location: "",
+    favoriteFood: "",
   });
 
   const [addingAddress, setAddingAddress] = useState(false);
+  const [editingAddressId, setEditingAddressId] = useState(null);
   const [addressForm, setAddressForm] = useState({
-    type: 'home',
-    street: '',
-    city: '',
-    state: '',
-    zipCode: '',
-    landmark: '',
-    phone: '',
-    isDefault: false
+    type: "home",
+    street: "",
+    city: "",
+    state: "",
+    zipCode: "",
+    landmark: "",
+    phone: "",
+    isDefault: false,
   });
 
-  const [editingAddressId, setEditingAddressId] = useState(null);
   const [addingPayment, setAddingPayment] = useState(false);
-  const [paymentForm, setPaymentForm] = useState({
-    type: 'credit_card',
-    cardNumber: '',
-    cardName: '',
-    expiry: '',
-    cvv: '',
-    isDefault: false
-  });
 
   const [preferences, setPreferences] = useState({
     notifications: {
@@ -113,317 +116,466 @@ const Page = () => {
       promotions: true,
       priceDrops: false,
       newRestaurants: true,
-      deliveryStatus: true
+      deliveryStatus: true,
     },
     diet: {
       vegetarian: false,
       vegan: false,
       glutenFree: false,
-      dairyFree: false
+      dairyFree: false,
     },
     delivery: {
       contactless: true,
       leaveAtDoor: false,
-      callBeforeDelivery: true
-    }
+      callBeforeDelivery: true,
+    },
   });
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
-  const currencySymbol = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || '₹';
-
-  // 🔐 Protect page
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
-      router.push('/login?redirect=/profile');
+      router.push("/login?redirect=/profile");
     }
   }, [authLoading, isAuthenticated, router]);
 
-  // Fetch all user data
   useEffect(() => {
     if (isAuthenticated) {
       fetchUserData();
     }
   }, [isAuthenticated]);
 
+  const showSuccess = (message) => {
+    setSuccess(message);
+    setTimeout(() => setSuccess(null), 3000);
+  };
+
+  const showError = (message) => {
+    setError(message);
+    setTimeout(() => setError(null), 4000);
+  };
+
+  const getToken = () => localStorage.getItem("token");
+
   const fetchUserData = async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
-      const token = localStorage.getItem('token');
+      const token = getToken();
+
       const headers = {
-        'Authorization': `Bearer ${token}`
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
       };
 
-      // Fetch user profile
       const profileRes = await fetch(`${apiUrl}/users/profile`, { headers });
-      if (!profileRes.ok) throw new Error('Failed to fetch profile');
+
+      if (!profileRes.ok) {
+        throw new Error("Failed to fetch profile");
+      }
+
       const profileData = await profileRes.json();
-      
-      setUserData({
-        name: profileData.name || '',
-        email: profileData.email || '',
-        phone: profileData.phone || '',
-        profilePic: profileData.profilePic || null,
-        joinDate: profileData.joinDate || new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
-        loyaltyPoints: profileData.loyaltyPoints || 0,
-        membershipLevel: profileData.membershipLevel || 'Bronze Member'
-      });
+      const userInfo = profileData.user || profileData;
+
+      const profile = {
+        name: userInfo.name || "",
+        email: userInfo.email || "",
+        phone: userInfo.phone || "",
+        profilePic: userInfo.profilePic || null,
+        joinDate: userInfo.createdAt
+          ? new Date(userInfo.createdAt).toLocaleDateString("en-IN", {
+              month: "long",
+              year: "numeric",
+            })
+          : new Date().toLocaleDateString("en-IN", {
+              month: "long",
+              year: "numeric",
+            }),
+        loyaltyPoints: Number(userInfo.loyaltyPoints || 0),
+        membershipLevel: userInfo.membershipLevel || "Bronze Member",
+        bio:
+          userInfo.bio ||
+          "🍽️ Passionate foodie exploring amazing flavors every day!",
+        location: userInfo.location || "",
+        favoriteFood: userInfo.favoriteFood || "",
+      };
+
+      setUserData(profile);
 
       setProfileForm({
-        name: profileData.name || '',
-        phone: profileData.phone || '',
-        email: profileData.email || ''
+        name: profile.name,
+        phone: profile.phone,
+        email: profile.email,
+        bio: profile.bio,
+        location: profile.location,
+        favoriteFood: profile.favoriteFood,
       });
 
-      // Fetch addresses
-      const addressRes = await fetch(`${apiUrl}/users/addresses`, { headers });
-      if (addressRes.ok) {
-        const addressData = await addressRes.json();
-        setAddresses(addressData);
-      }
-
-      // Fetch payment methods
-      const paymentRes = await fetch(`${apiUrl}/users/payment-methods`, { headers });
-      if (paymentRes.ok) {
-        const paymentData = await paymentRes.json();
-        setPaymentMethods(paymentData);
-      }
-
-      // Fetch orders
-      const ordersRes = await fetch(`${apiUrl}/users/orders`, { headers });
-      if (ordersRes.ok) {
-        const ordersData = await ordersRes.json();
-        setOrders(ordersData);
-        
-        // Calculate stats from orders
-        if (ordersData.length > 0) {
-          const total = ordersData.reduce((sum, order) => sum + order.total, 0);
-          const restaurantCounts = {};
-          ordersData.forEach(order => {
-            restaurantCounts[order.restaurantName] = (restaurantCounts[order.restaurantName] || 0) + 1;
-          });
-          const favoriteRestaurant = Object.keys(restaurantCounts).reduce((a, b) => 
-            restaurantCounts[a] > restaurantCounts[b] ? a : b
-          );
-          
-          setStats({
-            totalOrders: ordersData.length,
-            totalSpent: `${currencySymbol}${total.toFixed(2)}`,
-            favoriteRestaurant: favoriteRestaurant || 'N/A',
-            favoriteCuisine: 'North Indian', // This would come from order items
-            averageRating: 4.8, // Calculate from order ratings
-            deliveryStreak: 5 // Track consecutive days
-          });
+      try {
+        const addressRes = await fetch(`${apiUrl}/users/addresses`, { headers });
+        if (addressRes.ok) {
+          const data = await addressRes.json();
+          setAddresses(Array.isArray(data) ? data : data.addresses || []);
         }
-      }
+      } catch {}
 
-      // Fetch favorites
-      const favRes = await fetch(`${apiUrl}/users/favorites`, { headers });
-      if (favRes.ok) {
-        const favData = await favRes.json();
-        setFavorites(favData);
-      }
+      try {
+        const paymentRes = await fetch(`${apiUrl}/users/payment-methods`, {
+          headers,
+        });
+        if (paymentRes.ok) {
+          const data = await paymentRes.json();
+          setPaymentMethods(
+            Array.isArray(data) ? data : data.paymentMethods || []
+          );
+        }
+      } catch {}
 
-      // Fetch notifications
-      const notifRes = await fetch(`${apiUrl}/users/notifications`, { headers });
-      if (notifRes.ok) {
-        const notifData = await notifRes.json();
-        setNotifications(notifData);
-      }
+      try {
+        const ordersRes = await fetch(`${apiUrl}/orders/user`, { headers });
+        if (ordersRes.ok) {
+          const data = await ordersRes.json();
+          const list = Array.isArray(data) ? data : data.orders || [];
+          setOrders(list);
 
-      // Fetch user preferences
-      const prefRes = await fetch(`${apiUrl}/users/preferences`, { headers });
-      if (prefRes.ok) {
-        const prefData = await prefRes.json();
-        setPreferences(prefData);
-      }
+          const total = list.reduce(
+            (sum, order) =>
+              sum + Number(order.totalAmount || order.total || 0),
+            0
+          );
 
-      // Fetch rewards
-      const rewardRes = await fetch(`${apiUrl}/users/rewards`, { headers });
-      if (rewardRes.ok) {
-        const rewardData = await rewardRes.json();
-        setRewards(rewardData);
-      }
+          setStats((prev) => ({
+            ...prev,
+            totalOrders: list.length,
+            totalSpent: `${currencySymbol}${Number(total || 0).toFixed(2)}`,
+          }));
+        }
+      } catch {}
 
+      try {
+        const favRes = await fetch(`${apiUrl}/users/favorites`, { headers });
+        if (favRes.ok) {
+          const data = await favRes.json();
+          setFavorites(Array.isArray(data) ? data : data.favorites || []);
+        }
+      } catch {}
+
+      try {
+        const notifRes = await fetch(`${apiUrl}/users/notifications`, {
+          headers,
+        });
+        if (notifRes.ok) {
+          const data = await notifRes.json();
+          setNotifications(
+            Array.isArray(data) ? data : data.notifications || []
+          );
+        }
+      } catch {}
     } catch (err) {
-      console.error('Error fetching user data:', err);
-      setError(err.message);
+      showError(err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  // Update Profile
+  const reverseGeocode = async (lat, lng) => {
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
+      {
+        headers: {
+          "User-Agent": "RuchibazzarApp/1.0",
+        },
+      }
+    );
+
+    const data = await response.json();
+    return data.display_name || `${lat}, ${lng}`;
+  };
+
+  const getCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      showError("Geolocation is not supported");
+      return;
+    }
+
+    setLocationLoading(true);
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        try {
+          const { latitude, longitude } = position.coords;
+          const address = await reverseGeocode(latitude, longitude);
+
+          setAddressForm((prev) => ({
+            ...prev,
+            street: address,
+          }));
+
+          showSuccess("Current location fetched successfully!");
+        } catch {
+          showError("Unable to fetch current location");
+        } finally {
+          setLocationLoading(false);
+        }
+      },
+      () => {
+        setLocationLoading(false);
+        showError("Please allow location access and try again");
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0,
+      }
+    );
+  };
+
   const updateProfile = async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = getToken();
+
       const response = await fetch(`${apiUrl}/users/profile`, {
-        method: 'PUT',
+        method: "PUT",
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(profileForm)
+        body: JSON.stringify(profileForm),
       });
 
-      if (!response.ok) throw new Error('Failed to update profile');
+      const data = await response.json();
 
-      setUserData(prev => ({ ...prev, ...profileForm }));
+      if (!response.ok) {
+        throw new Error(data.message || "Failed to update profile");
+      }
+
+      const updatedUser = data.user || data;
+
+      setUserData((prev) => ({
+        ...prev,
+        ...updatedUser,
+      }));
+
+      localStorage.setItem("user", JSON.stringify(updatedUser));
+
       setEditingProfile(false);
-      setSuccess('Profile updated successfully!');
-      setTimeout(() => setSuccess(null), 3000);
+      showSuccess("Profile updated successfully!");
     } catch (err) {
-      setError(err.message);
+      showError(err.message);
     }
   };
 
-  // Add Address
   const addAddress = async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = getToken();
+
       const response = await fetch(`${apiUrl}/users/addresses`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(addressForm)
+        body: JSON.stringify(addressForm),
       });
 
-      if (!response.ok) throw new Error('Failed to add address');
+      const data = await response.json();
 
-      const newAddress = await response.json();
-      setAddresses(prev => [...prev, newAddress]);
+      if (!response.ok) {
+        throw new Error(data.message || "Failed to add address");
+      }
+
+      setAddresses((prev) => [...prev, data.address || data]);
       setAddingAddress(false);
-      setAddressForm({
-        type: 'home',
-        street: '',
-        city: '',
-        state: '',
-        zipCode: '',
-        landmark: '',
-        phone: '',
-        isDefault: false
-      });
-      setSuccess('Address added successfully!');
-      setTimeout(() => setSuccess(null), 3000);
+      resetAddressForm();
+      showSuccess("Address added successfully!");
     } catch (err) {
-      setError(err.message);
+      showError(err.message);
     }
   };
 
-  // Update Address
   const updateAddress = async (addressId) => {
     try {
-      const token = localStorage.getItem('token');
+      const token = getToken();
+
       const response = await fetch(`${apiUrl}/users/addresses/${addressId}`, {
-        method: 'PUT',
+        method: "PUT",
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(addressForm)
+        body: JSON.stringify(addressForm),
       });
 
-      if (!response.ok) throw new Error('Failed to update address');
+      const data = await response.json();
 
-      const updatedAddress = await response.json();
-      setAddresses(prev => prev.map(addr => 
-        addr.id === addressId ? updatedAddress : addr
-      ));
+      if (!response.ok) {
+        throw new Error(data.message || "Failed to update address");
+      }
+
+      setAddresses((prev) =>
+        prev.map((addr) => (addr.id === addressId ? data.address || data : addr))
+      );
+
       setEditingAddressId(null);
-      setSuccess('Address updated successfully!');
-      setTimeout(() => setSuccess(null), 3000);
+      resetAddressForm();
+      showSuccess("Address updated successfully!");
     } catch (err) {
-      setError(err.message);
+      showError(err.message);
     }
   };
 
-  // Delete Address
   const deleteAddress = async (addressId) => {
-    if (!confirm('Are you sure you want to delete this address?')) return;
+    if (!confirm("Are you sure you want to delete this address?")) return;
 
     try {
-      const token = localStorage.getItem('token');
+      const token = getToken();
+
       const response = await fetch(`${apiUrl}/users/addresses/${addressId}`, {
-        method: 'DELETE',
+        method: "DELETE",
         headers: {
-          'Authorization': `Bearer ${token}`
-        }
+          Authorization: `Bearer ${token}`,
+        },
       });
 
-      if (!response.ok) throw new Error('Failed to delete address');
+      if (!response.ok) {
+        throw new Error("Failed to delete address");
+      }
 
-      setAddresses(prev => prev.filter(addr => addr.id !== addressId));
-      setSuccess('Address deleted successfully!');
-      setTimeout(() => setSuccess(null), 3000);
+      setAddresses((prev) => prev.filter((addr) => addr.id !== addressId));
+      showSuccess("Address deleted successfully!");
     } catch (err) {
-      setError(err.message);
+      showError(err.message);
     }
   };
 
-  // Set Default Address
   const setDefaultAddress = async (addressId) => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`${apiUrl}/users/addresses/${addressId}/default`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`
+      const token = getToken();
+
+      const response = await fetch(
+        `${apiUrl}/users/addresses/${addressId}/default`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
         }
-      });
+      );
 
-      if (!response.ok) throw new Error('Failed to set default address');
+      if (!response.ok) {
+        throw new Error("Failed to set default address");
+      }
 
-      setAddresses(prev => prev.map(addr => ({
-        ...addr,
-        isDefault: addr.id === addressId
-      })));
-      setSuccess('Default address updated!');
-      setTimeout(() => setSuccess(null), 3000);
+      setAddresses((prev) =>
+        prev.map((addr) => ({
+          ...addr,
+          isDefault: addr.id === addressId,
+        }))
+      );
+
+      showSuccess("Default address updated!");
     } catch (err) {
-      setError(err.message);
+      showError(err.message);
     }
   };
 
-  // Update Preferences
   const updatePreferences = async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = getToken();
+
       const response = await fetch(`${apiUrl}/users/preferences`, {
-        method: 'PUT',
+        method: "PUT",
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(preferences)
+        body: JSON.stringify(preferences),
       });
 
-      if (!response.ok) throw new Error('Failed to update preferences');
+      if (!response.ok) {
+        throw new Error("Failed to update preferences");
+      }
 
-      setSuccess('Preferences updated successfully!');
-      setTimeout(() => setSuccess(null), 3000);
+      showSuccess("Preferences updated successfully!");
     } catch (err) {
-      setError(err.message);
+      showError(err.message);
     }
   };
 
-  // Handle logout
-  const handleLogout = async () => {
-    await logout();
-    router.push('/');
+  const resetAddressForm = () => {
+    setAddressForm({
+      type: "home",
+      street: "",
+      city: "",
+      state: "",
+      zipCode: "",
+      landmark: "",
+      phone: "",
+      isDefault: false,
+    });
   };
 
-  // Loading state
+  const handleLogout = async () => {
+    await logout();
+    router.push("/");
+  };
+
+  const getMembershipBadge = () => {
+    const level = userData.membershipLevel;
+
+    if (level === "Platinum Member") {
+      return {
+        color: "from-purple-400 to-pink-500",
+        icon: <Crown className="w-4 h-4" />,
+      };
+    }
+
+    if (level === "Gold Member") {
+      return {
+        color: "from-yellow-400 to-orange-500",
+        icon: <Award className="w-4 h-4" />,
+      };
+    }
+
+    if (level === "Silver Member") {
+      return {
+        color: "from-gray-400 to-gray-500",
+        icon: <Sparkles className="w-4 h-4" />,
+      };
+    }
+
+    return {
+      color: "from-amber-600 to-orange-600",
+      icon: <BadgeCheck className="w-4 h-4" />,
+    };
+  };
+
+  const profileCompletion = Math.round(
+    ([
+      userData.name,
+      userData.email,
+      userData.phone,
+      userData.location,
+      userData.favoriteFood,
+    ].filter(Boolean).length /
+      5) *
+      100
+  );
+
+  const membershipBadge = getMembershipBadge();
+
   if (authLoading || loading) {
     return (
       <>
         <Navbar />
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-rose-50 flex items-center justify-center">
           <div className="text-center">
-            <Loader className="w-12 h-12 text-orange-500 animate-spin mx-auto mb-4" />
-            <p className="text-gray-600">Loading your profile...</p>
+            <Loader className="w-14 h-14 text-purple-600 animate-spin mx-auto mb-4" />
+            <h2 className="text-2xl font-bold text-purple-700">
+              Loading Profile
+            </h2>
+            <p className="text-gray-600 mt-2">
+              Preparing your personalized dashboard...
+            </p>
           </div>
         </div>
         <Footer />
@@ -431,120 +583,834 @@ const Page = () => {
     );
   }
 
+  const renderProfile = () => (
+    <div className="space-y-6">
+      <div className="bg-gradient-to-r from-purple-600 via-pink-600 to-rose-500 rounded-2xl p-8 text-white relative overflow-hidden shadow-xl">
+        <div className="relative z-10 flex flex-col md:flex-row items-center gap-6">
+          <div className="relative">
+            <div className="w-28 h-28 bg-white/20 rounded-full flex items-center justify-center text-4xl font-bold backdrop-blur-sm border-2 border-white/30 overflow-hidden">
+              {userData.profilePic ? (
+                <img
+                  src={userData.profilePic || "/default-user.png"}
+                  alt="Profile"
+                  className="w-full h-full rounded-full object-cover"
+                />
+              ) : (
+                <span>{userData.name?.charAt(0) || "U"}</span>
+              )}
+            </div>
+
+            <button className="absolute bottom-0 right-0 bg-white rounded-full p-2 shadow-lg">
+              <Camera className="w-4 h-4 text-purple-600" />
+            </button>
+          </div>
+
+          <div className="flex-1 text-center md:text-left">
+            <div className="flex flex-wrap items-center gap-2 justify-center md:justify-start mb-2">
+              <h2 className="text-2xl font-bold">
+                {userData.name || "User"}
+              </h2>
+
+              <div
+                className={`bg-gradient-to-r ${membershipBadge.color} px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1`}
+              >
+                {membershipBadge.icon}
+                {userData.membershipLevel}
+              </div>
+            </div>
+
+            <p className="text-purple-100 mb-3">{userData.bio}</p>
+
+            <div className="flex flex-wrap gap-4 text-sm justify-center md:justify-start">
+              <div className="flex items-center gap-2">
+                <Mail className="w-4 h-4" />
+                {userData.email || "No email"}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Phone className="w-4 h-4" />
+                {userData.phone || "Add phone"}
+              </div>
+
+              {userData.location && (
+                <div className="flex items-center gap-2">
+                  <MapPin className="w-4 h-4" />
+                  {userData.location}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <button
+            onClick={() => setEditingProfile(true)}
+            className="bg-white/20 hover:bg-white/30 backdrop-blur-sm px-4 py-2 rounded-lg flex items-center gap-2 transition-all"
+          >
+            <Edit className="w-4 h-4" />
+            Edit Profile
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm border border-purple-100 p-6">
+        <div className="flex justify-between mb-3">
+          <h3 className="font-semibold text-gray-800">Profile Completion</h3>
+          <span className="font-bold text-purple-600">
+            {profileCompletion}%
+          </span>
+        </div>
+
+        <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+          <div
+            className="bg-gradient-to-r from-purple-500 to-pink-500 h-full"
+            style={{ width: `${profileCompletion}%` }}
+          />
+        </div>
+
+        <p className="text-sm text-gray-500 mt-2">
+          Complete your profile to unlock more rewards.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <StatCard
+          icon={<ShoppingBag className="w-6 h-6 text-purple-600" />}
+          value={stats.totalOrders}
+          label="Total Orders"
+        />
+
+        <StatCard
+          icon={<Award className="w-6 h-6 text-pink-600" />}
+          value={userData.loyaltyPoints}
+          label="Loyalty Points"
+        />
+
+        <StatCard
+          icon={<Clock className="w-6 h-6 text-orange-600" />}
+          value={stats.deliveryStreak}
+          label="Day Streak"
+        />
+
+        <StatCard
+          icon={<Star className="w-6 h-6 text-green-600" />}
+          value={stats.averageRating}
+          label="Avg Rating"
+        />
+      </div>
+
+      {userData.favoriteFood && (
+        <div className="bg-gradient-to-r from-purple-100 to-pink-100 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Coffee className="w-5 h-5 text-purple-600" />
+            <span className="font-semibold text-gray-800">Favorite Food</span>
+          </div>
+          <p className="text-gray-700">{userData.favoriteFood}</p>
+        </div>
+      )}
+
+      {editingProfile && renderEditProfileModal()}
+    </div>
+  );
+
+  const renderEditProfileModal = () => (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+        <div className="bg-gradient-to-r from-purple-600 to-pink-600 px-6 py-4 flex justify-between items-center sticky top-0">
+          <h3 className="text-lg font-semibold text-white">Edit Profile</h3>
+          <button
+            onClick={() => setEditingProfile(false)}
+            className="text-white/80 hover:text-white"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          {[
+            ["name", "Full Name"],
+            ["email", "Email"],
+            ["phone", "Phone Number"],
+            ["location", "Location"],
+            ["favoriteFood", "Favorite Food"],
+          ].map(([field, label]) => (
+            <div key={field}>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                {label}
+              </label>
+              <input
+                type={field === "email" ? "email" : "text"}
+                value={profileForm[field]}
+                onChange={(e) =>
+                  setProfileForm({ ...profileForm, [field]: e.target.value })
+                }
+                className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 text-black"
+              />
+            </div>
+          ))}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Bio
+            </label>
+            <textarea
+              value={profileForm.bio}
+              onChange={(e) =>
+                setProfileForm({ ...profileForm, bio: e.target.value })
+              }
+              rows="3"
+              className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 text-black"
+            />
+          </div>
+        </div>
+
+        <div className="border-t border-gray-200 p-4 flex gap-3">
+          <button
+            onClick={() => setEditingProfile(false)}
+            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+
+          <button
+            onClick={updateProfile}
+            className="flex-1 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg hover:shadow-lg"
+          >
+            Save Changes
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderAddresses = () => (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between gap-3 sm:items-center">
+        <h2 className="text-2xl font-bold text-gray-900">Saved Addresses</h2>
+
+        <button
+          onClick={() => setAddingAddress(true)}
+          className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg hover:shadow-lg flex items-center gap-2 justify-center"
+        >
+          <Plus className="w-4 h-4" />
+          Add New Address
+        </button>
+      </div>
+
+      {addresses.length === 0 ? (
+        <EmptyState
+          icon={<MapPin className="w-16 h-16 text-gray-400 mx-auto mb-4" />}
+          title="No saved addresses"
+          description="Add your delivery address for faster checkout."
+          action="Add Address"
+          onClick={() => setAddingAddress(true)}
+        />
+      ) : (
+        <div className="grid gap-4">
+          {addresses.map((address) => (
+            <div
+              key={address.id}
+              className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md"
+            >
+              <div className="flex justify-between items-start mb-3">
+                <div className="flex items-center gap-2">
+                  {address.type === "home" ? (
+                    <Home className="w-5 h-5 text-purple-600" />
+                  ) : (
+                    <Briefcase className="w-5 h-5 text-pink-600" />
+                  )}
+
+                  <span className="font-semibold text-gray-900 capitalize">
+                    {address.type}
+                  </span>
+
+                  {address.isDefault && (
+                    <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">
+                      Default
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      setAddressForm(address);
+                      setEditingAddressId(address.id);
+                    }}
+                    className="text-gray-400 hover:text-purple-600"
+                  >
+                    <Edit className="w-4 h-4" />
+                  </button>
+
+                  <button
+                    onClick={() => deleteAddress(address.id)}
+                    className="text-gray-400 hover:text-red-600"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              <p className="text-gray-700">{address.street}</p>
+              <p className="text-gray-600 text-sm">
+                {address.city}, {address.state} - {address.zipCode}
+              </p>
+
+              {address.landmark && (
+                <p className="text-gray-500 text-sm mt-1">
+                  Landmark: {address.landmark}
+                </p>
+              )}
+
+              {address.phone && (
+                <p className="text-gray-500 text-sm mt-1">
+                  Phone: {address.phone}
+                </p>
+              )}
+
+              {!address.isDefault && (
+                <button
+                  onClick={() => setDefaultAddress(address.id)}
+                  className="mt-3 text-sm text-purple-600 hover:text-purple-700 font-medium"
+                >
+                  Set as Default
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {(addingAddress || editingAddressId) && renderAddressModal()}
+    </div>
+  );
+
+  const renderAddressModal = () => (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+        <div className="bg-gradient-to-r from-purple-600 to-pink-600 px-6 py-4 flex justify-between items-center sticky top-0">
+          <h3 className="text-lg font-semibold text-white">
+            {editingAddressId ? "Edit Address" : "Add New Address"}
+          </h3>
+
+          <button
+            onClick={() => {
+              setAddingAddress(false);
+              setEditingAddressId(null);
+              resetAddressForm();
+            }}
+            className="text-white/80 hover:text-white"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          <div className="flex gap-3">
+            {["home", "work"].map((type) => (
+              <button
+                key={type}
+                onClick={() => setAddressForm({ ...addressForm, type })}
+                className={`flex-1 px-4 py-2 rounded-lg border-2 ${
+                  addressForm.type === type
+                    ? "border-purple-500 bg-purple-50 text-purple-700"
+                    : "border-gray-200 text-gray-600"
+                }`}
+              >
+                {type === "home" ? (
+                  <Home className="w-4 h-4 inline mr-2" />
+                ) : (
+                  <Briefcase className="w-4 h-4 inline mr-2" />
+                )}
+                {type}
+              </button>
+            ))}
+          </div>
+
+          <textarea
+            value={addressForm.street}
+            onChange={(e) =>
+              setAddressForm({ ...addressForm, street: e.target.value })
+            }
+            rows="3"
+            className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 text-black"
+            placeholder="House No., Building, Street"
+          />
+
+          <button
+            type="button"
+            onClick={getCurrentLocation}
+            disabled={locationLoading}
+            className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white py-2 rounded-lg flex items-center justify-center gap-2 disabled:opacity-60"
+          >
+            {locationLoading ? (
+              <Loader className="w-4 h-4 animate-spin" />
+            ) : (
+              <Navigation className="w-4 h-4" />
+            )}
+            Use Current Location
+          </button>
+
+          <div className="grid grid-cols-2 gap-3">
+            <input
+              type="text"
+              value={addressForm.city}
+              onChange={(e) =>
+                setAddressForm({ ...addressForm, city: e.target.value })
+              }
+              className="w-full px-4 py-2 border border-gray-200 rounded-lg text-black"
+              placeholder="City"
+            />
+
+            <input
+              type="text"
+              value={addressForm.state}
+              onChange={(e) =>
+                setAddressForm({ ...addressForm, state: e.target.value })
+              }
+              className="w-full px-4 py-2 border border-gray-200 rounded-lg text-black"
+              placeholder="State"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <input
+              type="text"
+              value={addressForm.zipCode}
+              onChange={(e) =>
+                setAddressForm({ ...addressForm, zipCode: e.target.value })
+              }
+              className="w-full px-4 py-2 border border-gray-200 rounded-lg text-black"
+              placeholder="PIN Code"
+            />
+
+            <input
+              type="tel"
+              value={addressForm.phone}
+              onChange={(e) =>
+                setAddressForm({ ...addressForm, phone: e.target.value })
+              }
+              className="w-full px-4 py-2 border border-gray-200 rounded-lg text-black"
+              placeholder="Phone"
+            />
+          </div>
+
+          <input
+            type="text"
+            value={addressForm.landmark}
+            onChange={(e) =>
+              setAddressForm({ ...addressForm, landmark: e.target.value })
+            }
+            className="w-full px-4 py-2 border border-gray-200 rounded-lg text-black"
+            placeholder="Landmark"
+          />
+
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={addressForm.isDefault}
+              onChange={(e) =>
+                setAddressForm({
+                  ...addressForm,
+                  isDefault: e.target.checked,
+                })
+              }
+              className="w-4 h-4 text-purple-600 rounded"
+            />
+            <span className="text-sm text-gray-700">
+              Set as default address
+            </span>
+          </label>
+        </div>
+
+        <div className="border-t border-gray-200 p-4 flex gap-3">
+          <button
+            onClick={() => {
+              setAddingAddress(false);
+              setEditingAddressId(null);
+              resetAddressForm();
+            }}
+            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+
+          <button
+            onClick={() =>
+              editingAddressId
+                ? updateAddress(editingAddressId)
+                : addAddress()
+            }
+            className="flex-1 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg hover:shadow-lg"
+          >
+            {editingAddressId ? "Update Address" : "Save Address"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderPayments = () => (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between gap-3 sm:items-center">
+        <h2 className="text-2xl font-bold text-gray-900">Payment Methods</h2>
+
+        <button
+          onClick={() => setAddingPayment(true)}
+          className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg hover:shadow-lg flex items-center gap-2 justify-center"
+        >
+          <Plus className="w-4 h-4" />
+          Add Payment Method
+        </button>
+      </div>
+
+      <EmptyState
+        icon={<CreditCard className="w-16 h-16 text-gray-400 mx-auto mb-4" />}
+        title="No saved payment methods"
+        description="You can add payment methods later."
+      />
+    </div>
+  );
+
+  const renderOrders = () => (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold text-gray-900">My Orders</h2>
+
+      {orders.length === 0 ? (
+        <EmptyState
+          icon={<Package className="w-16 h-16 text-gray-400 mx-auto mb-4" />}
+          title="No orders yet"
+          description="Start ordering delicious food now."
+          action="Explore Restaurants"
+          onClick={() => router.push("/")}
+        />
+      ) : (
+        <div className="space-y-4">
+          {orders.map((order) => (
+            <div
+              key={order.id}
+              className="bg-white border border-gray-200 rounded-xl p-4"
+            >
+              <div className="flex justify-between items-start mb-3">
+                <div>
+                  <p className="font-semibold">Order #{order.id}</p>
+                  <p className="text-sm text-gray-500">
+                    {new Date(order.createdAt).toLocaleDateString()}
+                  </p>
+                </div>
+
+                <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm">
+                  {order.status || "Placed"}
+                </span>
+              </div>
+
+              <p className="text-gray-700">{order.items?.length || 0} items</p>
+              <p className="text-lg font-bold text-gray-900 mt-2">
+                {currencySymbol}
+                {Number(order.totalAmount || order.total || 0).toFixed(2)}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  const renderFavorites = () => (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold text-gray-900">Favorite Items</h2>
+
+      {favorites.length === 0 ? (
+        <EmptyState
+          icon={<Heart className="w-16 h-16 text-gray-400 mx-auto mb-4" />}
+          title="No favorite items yet"
+          description="Save your favorite food and restaurants here."
+          action="Browse Restaurants"
+          onClick={() => router.push("/")}
+        />
+      ) : (
+        <div className="grid gap-4">
+          {favorites.map((item) => (
+            <div
+              key={item.id}
+              className="bg-white border border-gray-200 rounded-xl p-4 flex items-center gap-4"
+            >
+              <div className="w-16 h-16 bg-gradient-to-br from-purple-100 to-pink-100 rounded-lg flex items-center justify-center">
+                <Utensils className="w-8 h-8 text-purple-600" />
+              </div>
+
+              <div className="flex-1">
+                <p className="font-semibold">{item.name}</p>
+                <p className="text-sm text-gray-500">{item.restaurant}</p>
+              </div>
+
+              <Heart className="w-5 h-5 text-red-500 fill-current" />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  const renderPreferences = () => (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold text-gray-900">Preferences</h2>
+
+        <button
+          onClick={updatePreferences}
+          className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg hover:shadow-lg"
+        >
+          Save Preferences
+        </button>
+      </div>
+
+      <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-6">
+        <PreferenceGroup
+          title="Notification Settings"
+          data={preferences.notifications}
+          onChange={(key, value) =>
+            setPreferences({
+              ...preferences,
+              notifications: {
+                ...preferences.notifications,
+                [key]: value,
+              },
+            })
+          }
+        />
+
+        <PreferenceGroup
+          title="Dietary Preferences"
+          data={preferences.diet}
+          onChange={(key, value) =>
+            setPreferences({
+              ...preferences,
+              diet: {
+                ...preferences.diet,
+                [key]: value,
+              },
+            })
+          }
+        />
+
+        <PreferenceGroup
+          title="Delivery Preferences"
+          data={preferences.delivery}
+          onChange={(key, value) =>
+            setPreferences({
+              ...preferences,
+              delivery: {
+                ...preferences.delivery,
+                [key]: value,
+              },
+            })
+          }
+        />
+      </div>
+    </div>
+  );
+
+  const renderNotifications = () => (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold text-gray-900">Notifications</h2>
+
+      {notifications.length === 0 ? (
+        <EmptyState
+          icon={<Bell className="w-16 h-16 text-gray-400 mx-auto mb-4" />}
+          title="No notifications yet"
+          description="Your notifications will appear here."
+        />
+      ) : (
+        <div className="space-y-3">
+          {notifications.map((notif) => (
+            <div
+              key={notif.id}
+              className={`bg-white border rounded-xl p-4 ${
+                !notif.read ? "border-purple-200 bg-purple-50/30" : "border-gray-200"
+              }`}
+            >
+              <p className="font-medium text-gray-900">{notif.title}</p>
+              <p className="text-sm text-gray-600 mt-1">{notif.message}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  const renderRewards = () => (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold text-gray-900">Rewards & Offers</h2>
+
+      <div className="bg-gradient-to-r from-purple-600 to-pink-600 rounded-2xl p-6 text-white">
+        <div className="flex items-center justify-between mb-4">
+          <Gift className="w-8 h-8" />
+          <span className="text-3xl font-bold">
+            {userData.loyaltyPoints} pts
+          </span>
+        </div>
+
+        <p className="text-purple-100">Earn points on every order</p>
+      </div>
+
+      <EmptyState
+        icon={<Gift className="w-16 h-16 text-gray-400 mx-auto mb-4" />}
+        title="No active rewards"
+        description="Rewards will appear here."
+      />
+    </div>
+  );
+
+  const renderHelp = () => (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold text-gray-900">Help & Support</h2>
+
+      <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
+        <div className="p-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl">
+          <h3 className="font-semibold text-gray-900 mb-2">
+            Need Assistance?
+          </h3>
+          <p className="text-gray-600">
+            Our support team is here to help you.
+          </p>
+        </div>
+
+        {["Contact Support", "FAQ", "Terms & Conditions", "Privacy Policy"].map(
+          (item) => (
+            <button
+              key={item}
+              className="w-full px-4 py-3 border border-gray-200 rounded-lg hover:bg-gray-50"
+            >
+              {item}
+            </button>
+          )
+        )}
+      </div>
+    </div>
+  );
+
+  const tabs = [
+    { id: "profile", label: "Profile", icon: <User className="w-5 h-5" /> },
+    {
+      id: "addresses",
+      label: "Addresses",
+      icon: <MapPin className="w-5 h-5" />,
+      count: addresses.length,
+    },
+    {
+      id: "payments",
+      label: "Payments",
+      icon: <CreditCard className="w-5 h-5" />,
+      count: paymentMethods.length,
+    },
+    {
+      id: "orders",
+      label: "My Orders",
+      icon: <ShoppingBag className="w-5 h-5" />,
+      count: stats.totalOrders,
+    },
+    {
+      id: "favorites",
+      label: "Favorites",
+      icon: <Heart className="w-5 h-5" />,
+      count: favorites.length,
+    },
+    {
+      id: "preferences",
+      label: "Preferences",
+      icon: <Settings className="w-5 h-5" />,
+    },
+    {
+      id: "notifications",
+      label: "Notifications",
+      icon: <Bell className="w-5 h-5" />,
+      count: notifications.filter((n) => !n.read).length,
+    },
+    { id: "rewards", label: "Rewards", icon: <Gift className="w-5 h-5" /> },
+    {
+      id: "help",
+      label: "Help & Support",
+      icon: <HelpCircle className="w-5 h-5" />,
+    },
+  ];
+
   return (
     <>
       <Navbar />
-      
-      <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
+
+      <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-rose-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          
-          {/* Header Section */}
           <div className="mb-8">
-            <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">My Profile</h1>
-            <p className="text-gray-600">Manage your account, preferences, and orders</p>
+            <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-600 via-pink-600 to-rose-500 bg-clip-text text-transparent mb-2">
+              My Profile
+            </h1>
+            <p className="text-gray-600">
+              Manage your account, preferences, and orders
+            </p>
           </div>
 
-          {/* Success/Error Messages */}
           {error && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3 text-red-700">
-              <AlertCircle className="w-5 h-5 flex-shrink-0" />
-              <p className="flex-1">{error}</p>
-              <button onClick={() => setError(null)} className="hover:text-red-900">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+            <AlertBox
+              type="error"
+              message={error}
+              onClose={() => setError(null)}
+            />
           )}
 
-          {success && (
-            <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-3 text-green-700">
-              <Check className="w-5 h-5 flex-shrink-0" />
-              <p className="flex-1">{success}</p>
-            </div>
-          )}
+          {success && <AlertBox type="success" message={success} />}
 
-          <div className="grid lg:grid-cols-4 gap-8">
-            
-            {/* Left Column - Navigation & Quick Stats */}
-            <div className="lg:col-span-1 space-y-6">
-              
-              {/* Profile Card */}
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+            <div className="lg:col-span-1 space-y-6 lg:sticky lg:top-24 h-fit">
+              <div className="bg-white rounded-2xl shadow-sm border border-purple-100 p-6">
                 <div className="flex flex-col items-center text-center">
-                  <div className="relative mb-4">
-                    <div className="w-24 h-24 bg-gradient-to-br from-orange-400 to-pink-500 rounded-full flex items-center justify-center text-white text-2xl font-bold mb-3">
-                      {userData.profilePic ? (
-                        <img src={userData.profilePic} alt="Profile" className="w-full h-full rounded-full object-cover" />
-                      ) : (
-                        <span className="text-3xl">{userData.name?.charAt(0) || 'U'}</span>
-                      )}
-                    </div>
-                    <button 
-                      onClick={() => setEditingProfile(true)}
-                      className="absolute bottom-2 right-2 bg-white p-2 rounded-full shadow-md hover:shadow-lg transition-shadow duration-300"
-                    >
-                      <Edit className="w-4 h-4 text-gray-600" />
-                    </button>
+                  <div className="w-24 h-24 bg-gradient-to-br from-purple-400 to-pink-500 rounded-full flex items-center justify-center text-white text-2xl font-bold mb-3 shadow-lg overflow-hidden">
+                    {userData.profilePic ? (
+                      <img
+                        src={userData.profilePic || "/default-user.png"}
+                        alt="Profile"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      userData.name?.charAt(0) || "U"
+                    )}
                   </div>
-                  
-                  <h2 className="text-xl font-bold text-gray-900 mb-1">{userData.name || 'User'}</h2>
-                  <p className="text-gray-600 text-sm mb-3">{userData.membershipLevel}</p>
-                  
-                  <div className="flex items-center gap-2 text-sm text-gray-500 mb-4">
+
+                  <h2 className="text-xl font-bold text-gray-900 mb-1">
+                    {userData.name || "User"}
+                  </h2>
+
+                  <div
+                    className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-gradient-to-r ${membershipBadge.color} text-white mb-3`}
+                  >
+                    {membershipBadge.icon}
+                    {userData.membershipLevel}
+                  </div>
+
+                  <div className="flex items-center gap-2 text-sm text-gray-500">
                     <Calendar className="w-4 h-4" />
                     Member since {userData.joinDate}
-                  </div>
-
-                  {/* Loyalty Points */}
-                  <div className="w-full bg-gradient-to-r from-yellow-50 to-orange-50 rounded-xl p-4 mb-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <Award className="w-5 h-5 text-yellow-600" />
-                        <span className="font-semibold text-gray-900">Loyalty Points</span>
-                      </div>
-                      <span className="text-2xl font-bold text-yellow-600">{userData.loyaltyPoints}</span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div 
-                        className="bg-gradient-to-r from-yellow-400 to-orange-500 h-2 rounded-full"
-                        style={{ width: `${Math.min((userData.loyaltyPoints / 2000) * 100, 100)}%` }}
-                      ></div>
-                    </div>
-                    <p className="text-xs text-gray-600 mt-2">{2000 - userData.loyaltyPoints} points to next level</p>
                   </div>
                 </div>
               </div>
 
-              {/* Navigation Menu */}
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="bg-white rounded-2xl shadow-sm border border-purple-100 overflow-hidden">
                 <div className="p-1">
-                  {[
-                    { id: 'profile', label: 'Profile', icon: <User className="w-5 h-5" /> },
-                    { id: 'addresses', label: 'Addresses', icon: <MapPin className="w-5 h-5" />, count: addresses.length },
-                    { id: 'payments', label: 'Payments', icon: <CreditCard className="w-5 h-5" />, count: paymentMethods.length },
-                    { id: 'orders', label: 'My Orders', icon: <ShoppingBag className="w-5 h-5" />, count: stats.totalOrders },
-                    { id: 'favorites', label: 'Favorites', icon: <Heart className="w-5 h-5" />, count: favorites.length },
-                    { id: 'preferences', label: 'Preferences', icon: <Settings className="w-5 h-5" /> },
-                    { id: 'notifications', label: 'Notifications', icon: <Bell className="w-5 h-5" />, count: notifications.filter(n => !n.read).length },
-                    { id: 'rewards', label: 'Rewards', icon: <Gift className="w-5 h-5" />, count: rewards.filter(r => r.status === 'available').length },
-                    { id: 'help', label: 'Help & Support', icon: <HelpCircle className="w-5 h-5" /> }
-                  ].map((item) => (
+                  {tabs.map((item) => (
                     <button
                       key={item.id}
                       onClick={() => setActiveTab(item.id)}
-                      className={`w-full flex items-center gap-3 p-3 rounded-lg mb-1 last:mb-0 transition-colors duration-200 ${
+                      className={`w-full flex items-center gap-3 p-3 rounded-lg mb-1 transition-all ${
                         activeTab === item.id
-                          ? 'bg-orange-50 text-orange-600'
-                          : 'hover:bg-gray-50 text-gray-700'
+                          ? "bg-gradient-to-r from-purple-50 to-pink-50 text-purple-600 shadow-sm"
+                          : "hover:bg-gray-50 text-gray-700"
                       }`}
                     >
                       {item.icon}
-                      <span className="font-medium flex-1 text-left">{item.label}</span>
+                      <span className="font-medium flex-1 text-left">
+                        {item.label}
+                      </span>
+
                       {item.count > 0 && (
-                        <span className={`text-xs font-semibold px-2 py-1 rounded-full ${
-                          activeTab === item.id
-                            ? 'bg-orange-100 text-orange-700'
-                            : 'bg-gray-100 text-gray-700'
-                        }`}>
+                        <span className="text-xs font-semibold px-2 py-1 rounded-full bg-purple-100 text-purple-700">
                           {item.count}
                         </span>
                       )}
@@ -553,1056 +1419,48 @@ const Page = () => {
                 </div>
               </div>
 
-              {/* Quick Stats */}
-              <div className="bg-gradient-to-r from-blue-500 to-cyan-500 rounded-2xl p-6 text-white">
+              <div className="bg-gradient-to-r from-purple-500 via-pink-500 to-rose-500 rounded-2xl p-6 text-white">
                 <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
-                  <Award className="w-5 h-5" />
+                  <Zap className="w-5 h-5" />
                   Quick Stats
                 </h3>
+
                 <div className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-blue-100">Total Orders</span>
-                    <span className="font-bold text-xl">{stats.totalOrders}</span>
+                  <div className="flex justify-between">
+                    <span>Total Orders</span>
+                    <b>{stats.totalOrders}</b>
                   </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-blue-100">Total Spent</span>
-                    <span className="font-bold">{stats.totalSpent}</span>
+
+                  <div className="flex justify-between">
+                    <span>Total Spent</span>
+                    <b>{stats.totalSpent}</b>
                   </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-blue-100">Avg. Rating</span>
-                    <div className="flex items-center gap-1">
-                      <Star className="w-4 h-4 fill-current" />
-                      <span className="font-bold">{stats.averageRating}</span>
-                    </div>
-                  </div>
-                  <div className="pt-3 border-t border-blue-400">
-                    <div className="text-sm text-blue-200">
-                      Delivery streak: {stats.deliveryStreak} days 🔥
-                    </div>
+
+                  <div className="flex justify-between">
+                    <span>Avg. Rating</span>
+                    <b>{stats.averageRating}</b>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Right Column - Content */}
             <div className="lg:col-span-3">
-              
-              {/* Profile Tab */}
-              {activeTab === 'profile' && (
-                <div className="space-y-6">
-                  <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-                    <div className="flex items-center justify-between mb-6">
-                      <h2 className="text-xl font-bold text-gray-900">Personal Information</h2>
-                      {!editingProfile ? (
-                        <button 
-                          onClick={() => setEditingProfile(true)}
-                          className="flex items-center gap-2 text-orange-600 font-semibold hover:text-orange-700"
-                        >
-                          <Edit className="w-4 h-4" />
-                          Edit Profile
-                        </button>
-                      ) : (
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => {
-                              setEditingProfile(false);
-                              setProfileForm({
-                                name: userData.name,
-                                phone: userData.phone,
-                                email: userData.email
-                              });
-                            }}
-                            className="px-3 py-1 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50"
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            onClick={updateProfile}
-                            className="px-3 py-1 bg-orange-500 text-white rounded-lg hover:bg-orange-600 flex items-center gap-2"
-                          >
-                            <Save className="w-4 h-4" />
-                            Save
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                    
-                    {editingProfile ? (
-                      <div className="grid md:grid-cols-2 gap-6">
-                        <div className="space-y-4">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-                            <input
-                              type="text"
-                              value={profileForm.name}
-                              onChange={(e) => setProfileForm({...profileForm, name: e.target.value})}
-                              className="w-full p-3 border border-gray-200 rounded-lg text-black focus:ring-2 focus:ring-orange-500"
-                            />
-                          </div>
-                          
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
-                            <input
-                              type="tel"
-                              value={profileForm.phone}
-                              onChange={(e) => setProfileForm({...profileForm, phone: e.target.value})}
-                              className="w-full p-3 border border-gray-200 rounded-lg text-black focus:ring-2 focus:ring-orange-500"
-                            />
-                          </div>
-                        </div>
-                        
-                        <div className="space-y-4">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
-                            <input
-                              type="email"
-                              value={profileForm.email}
-                              onChange={(e) => setProfileForm({...profileForm, email: e.target.value})}
-                              className="w-full p-3 border border-gray-200 rounded-lg text-black focus:ring-2 focus:ring-orange-500"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="grid md:grid-cols-2 gap-6">
-                        <div className="space-y-4">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-                            <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 text-black">
-                              {userData.name || 'Not set'}
-                            </div>
-                          </div>
-                          
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
-                            <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 flex items-center gap-2 text-black">
-                              <Phone className="w-4 h-4 text-gray-400" />
-                              {userData.phone || 'Not set'}
-                            </div>
-                          </div>
-                          
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Account Type</label>
-                            <div className="p-3 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-lg border border-yellow-200 text-black">
-                              {userData.membershipLevel}
-                            </div>
-                          </div>
-                        </div>
-                        
-                        <div className="space-y-4">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
-                            <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 flex items-center gap-2 text-black">
-                              <Mail className="w-4 h-4 text-gray-400" />
-                              {userData.email || 'Not set'}
-                            </div>
-                          </div>
-                          
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Join Date</label>
-                            <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 flex items-center gap-2 text-black">
-                              <Calendar className="w-4 h-4 text-gray-400" />
-                              {userData.joinDate}
-                            </div>
-                          </div>
-                          
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Account Status</label>
-                            <div className="p-3 bg-green-50 rounded-lg border border-green-200 text-green-700 font-semibold">
-                              ✅ Verified Account
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Recent Activity */}
-                  <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-                    <h2 className="text-xl font-bold text-gray-900 mb-6">Recent Orders</h2>
-                    <div className="space-y-4">
-                      {orders.slice(0, 3).map((order) => (
-                        <div key={order.id} className="flex items-center justify-between p-4 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors duration-200">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
-                              <Package className="w-5 h-5 text-blue-600" />
-                            </div>
-                            <div>
-                              <h4 className="font-semibold text-gray-900">Order #{order.id}</h4>
-                              <p className="text-sm text-gray-600">{order.restaurantName} • {order.items.length} items</p>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <div className="text-sm text-gray-500">{new Date(order.createdAt).toLocaleDateString()}</div>
-                            <div className="font-semibold text-gray-900">{currencySymbol}{order.total}</div>
-                          </div>
-                        </div>
-                      ))}
-                      {orders.length === 0 && (
-                        <p className="text-center text-gray-500 py-4">No orders yet</p>
-                      )}
-                    </div>
-                    {orders.length > 0 && (
-                      <button 
-                        onClick={() => setActiveTab('orders')}
-                        className="mt-4 text-orange-600 hover:text-orange-700 font-semibold flex items-center gap-1"
-                      >
-                        View All Orders
-                        <ChevronRight className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Addresses Tab */}
-              {activeTab === 'addresses' && (
-                <div className="space-y-6">
-                  <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-                    <div className="flex items-center justify-between mb-6">
-                      <h2 className="text-xl font-bold text-gray-900">Saved Addresses</h2>
-                      {!addingAddress ? (
-                        <button 
-                          onClick={() => setAddingAddress(true)}
-                          className="bg-orange-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-orange-600 transition-colors duration-300 flex items-center gap-2"
-                        >
-                          <Plus className="w-4 h-4" />
-                          Add New Address
-                        </button>
-                      ) : (
-                        <button 
-                          onClick={() => setAddingAddress(false)}
-                          className="text-gray-600 hover:text-gray-700"
-                        >
-                          <X className="w-5 h-5" />
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Add Address Form */}
-                    {addingAddress && (
-                      <div className="mb-6 p-4 border-2 border-orange-200 rounded-xl bg-orange-50">
-                        <h3 className="font-semibold text-gray-900 mb-4">Add New Address</h3>
-                        <div className="space-y-3">
-                          <div className="flex gap-3">
-                            {['home', 'office', 'other'].map((type) => (
-                              <button
-                                key={type}
-                                onClick={() => setAddressForm({...addressForm, type})}
-                                className={`px-4 py-2 rounded-lg capitalize ${
-                                  addressForm.type === type
-                                    ? 'bg-orange-500 text-white'
-                                    : 'bg-white text-gray-700 border border-gray-200'
-                                }`}
-                              >
-                                {type}
-                              </button>
-                            ))}
-                          </div>
-                          
-                          <input
-                            type="text"
-                            placeholder="Street Address *"
-                            value={addressForm.street}
-                            onChange={(e) => setAddressForm({...addressForm, street: e.target.value})}
-                            className="w-full p-3 border border-gray-200 rounded-lg text-black placeholder-gray-400 focus:ring-2 focus:ring-orange-500"
-                          />
-                          
-                          <div className="grid grid-cols-2 gap-3">
-                            <input
-                              type="text"
-                              placeholder="City *"
-                              value={addressForm.city}
-                              onChange={(e) => setAddressForm({...addressForm, city: e.target.value})}
-                              className="w-full p-3 border border-gray-200 rounded-lg text-black placeholder-gray-400 focus:ring-2 focus:ring-orange-500"
-                            />
-                            <input
-                              type="text"
-                              placeholder="State *"
-                              value={addressForm.state}
-                              onChange={(e) => setAddressForm({...addressForm, state: e.target.value})}
-                              className="w-full p-3 border border-gray-200 rounded-lg text-black placeholder-gray-400 focus:ring-2 focus:ring-orange-500"
-                            />
-                          </div>
-                          
-                          <div className="grid grid-cols-2 gap-3">
-                            <input
-                              type="text"
-                              placeholder="ZIP Code *"
-                              value={addressForm.zipCode}
-                              onChange={(e) => setAddressForm({...addressForm, zipCode: e.target.value})}
-                              className="w-full p-3 border border-gray-200 rounded-lg text-black placeholder-gray-400 focus:ring-2 focus:ring-orange-500"
-                            />
-                            <input
-                              type="text"
-                              placeholder="Landmark"
-                              value={addressForm.landmark}
-                              onChange={(e) => setAddressForm({...addressForm, landmark: e.target.value})}
-                              className="w-full p-3 border border-gray-200 rounded-lg text-black placeholder-gray-400 focus:ring-2 focus:ring-orange-500"
-                            />
-                          </div>
-                          
-                          <input
-                            type="tel"
-                            placeholder="Phone Number *"
-                            value={addressForm.phone}
-                            onChange={(e) => setAddressForm({...addressForm, phone: e.target.value})}
-                            className="w-full p-3 border border-gray-200 rounded-lg text-black placeholder-gray-400 focus:ring-2 focus:ring-orange-500"
-                          />
-                          
-                          <label className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              checked={addressForm.isDefault}
-                              onChange={(e) => setAddressForm({...addressForm, isDefault: e.target.checked})}
-                              className="rounded text-orange-500"
-                            />
-                            <span className="text-sm text-gray-700">Set as default address</span>
-                          </label>
-                          
-                          <div className="flex gap-3 mt-4">
-                            <button
-                              onClick={addAddress}
-                              className="flex-1 bg-orange-500 text-white py-2 rounded-lg font-semibold hover:bg-orange-600"
-                            >
-                              Save Address
-                            </button>
-                            <button
-                              onClick={() => setAddingAddress(false)}
-                              className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg font-semibold hover:bg-gray-50"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {/* Address List */}
-                    <div className="grid md:grid-cols-2 gap-6">
-                      {addresses.map((address) => (
-                        <div key={address.id} className="border border-gray-200 rounded-xl p-5 hover:border-orange-300 transition-colors duration-300">
-                          {editingAddressId === address.id ? (
-                            // Edit Form
-                            <div className="space-y-3">
-                              <div className="flex gap-3">
-                                {['home', 'office', 'other'].map((type) => (
-                                  <button
-                                    key={type}
-                                    onClick={() => setAddressForm({...addressForm, type})}
-                                    className={`px-3 py-1 text-sm rounded-lg capitalize ${
-                                      addressForm.type === type
-                                        ? 'bg-orange-500 text-white'
-                                        : 'bg-gray-100 text-gray-700'
-                                    }`}
-                                  >
-                                    {type}
-                                  </button>
-                                ))}
-                              </div>
-                              
-                              <input
-                                type="text"
-                                value={addressForm.street}
-                                onChange={(e) => setAddressForm({...addressForm, street: e.target.value})}
-                                className="w-full p-2 border border-gray-200 rounded text-sm"
-                              />
-                              
-                              <div className="grid grid-cols-2 gap-2">
-                                <input
-                                  type="text"
-                                  value={addressForm.city}
-                                  onChange={(e) => setAddressForm({...addressForm, city: e.target.value})}
-                                  className="w-full p-2 border border-gray-200 rounded text-sm"
-                                />
-                                <input
-                                  type="text"
-                                  value={addressForm.state}
-                                  onChange={(e) => setAddressForm({...addressForm, state: e.target.value})}
-                                  className="w-full p-2 border border-gray-200 rounded text-sm"
-                                />
-                              </div>
-                              
-                              <div className="grid grid-cols-2 gap-2">
-                                <input
-                                  type="text"
-                                  value={addressForm.zipCode}
-                                  onChange={(e) => setAddressForm({...addressForm, zipCode: e.target.value})}
-                                  className="w-full p-2 border border-gray-200 rounded text-sm"
-                                />
-                                <input
-                                  type="text"
-                                  value={addressForm.landmark}
-                                  onChange={(e) => setAddressForm({...addressForm, landmark: e.target.value})}
-                                  className="w-full p-2 border border-gray-200 rounded text-sm"
-                                />
-                              </div>
-                              
-                              <input
-                                type="tel"
-                                value={addressForm.phone}
-                                onChange={(e) => setAddressForm({...addressForm, phone: e.target.value})}
-                                className="w-full p-2 border border-gray-200 rounded text-sm"
-                              />
-                              
-                              <div className="flex gap-2 mt-2">
-                                <button
-                                  onClick={() => updateAddress(address.id)}
-                                  className="flex-1 bg-orange-500 text-white py-2 rounded text-sm"
-                                >
-                                  Save
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setEditingAddressId(null);
-                                    setAddressForm({});
-                                  }}
-                                  className="flex-1 border border-gray-300 text-gray-700 py-2 rounded text-sm"
-                                >
-                                  Cancel
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
-                            // Display Address
-                            <>
-                              <div className="flex items-start justify-between mb-3">
-                                <div className="flex items-center gap-2">
-                                  <div className={`p-2 rounded-lg ${
-                                    address.type === 'home' ? 'bg-blue-100' :
-                                    address.type === 'office' ? 'bg-purple-100' :
-                                    'bg-gray-100'
-                                  }`}>
-                                    {address.type === 'home' ? <Home className="w-4 h-4 text-blue-600" /> :
-                                     address.type === 'office' ? <Briefcase className="w-4 h-4 text-purple-600" /> :
-                                     <MapPinned className="w-4 h-4 text-gray-600" />}
-                                  </div>
-                                  <div>
-                                    <span className="font-bold text-gray-900 capitalize">{address.type}</span>
-                                    {address.isDefault && (
-                                      <span className="ml-2 px-2 py-0.5 bg-green-100 text-green-700 text-xs font-semibold rounded-full">
-                                        Default
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                                <div className="flex gap-1">
-                                  <button 
-                                    onClick={() => {
-                                      setEditingAddressId(address.id);
-                                      setAddressForm(address);
-                                    }}
-                                    className="p-1 text-gray-500 hover:text-orange-600 hover:bg-orange-50 rounded"
-                                  >
-                                    <Edit className="w-4 h-4" />
-                                  </button>
-                                  {!address.isDefault && (
-                                    <button 
-                                      onClick={() => deleteAddress(address.id)}
-                                      className="p-1 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded"
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                              
-                              <div className="space-y-1 text-sm text-gray-600 mt-3">
-                                <p>{address.street}</p>
-                                <p>{address.city}, {address.state} - {address.zipCode}</p>
-                                {address.landmark && <p className="text-gray-500">Landmark: {address.landmark}</p>}
-                                <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-100">
-                                  <Phone className="w-3 h-3" />
-                                  <span>{address.phone}</span>
-                                </div>
-                              </div>
-                              
-                              {!address.isDefault && (
-                                <button
-                                  onClick={() => setDefaultAddress(address.id)}
-                                  className="mt-3 text-sm font-semibold text-orange-600 hover:text-orange-700"
-                                >
-                                  Set as Default
-                                </button>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      ))}
-                      
-                      {addresses.length === 0 && !addingAddress && (
-                        <div className="col-span-2 text-center py-12 text-gray-500">
-                          <MapPin className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                          <p>No saved addresses yet</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Payments Tab */}
-              {activeTab === 'payments' && (
-                <div className="space-y-6">
-                  <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-                    <div className="flex items-center justify-between mb-6">
-                      <h2 className="text-xl font-bold text-gray-900">Payment Methods</h2>
-                      {!addingPayment ? (
-                        <button 
-                          onClick={() => setAddingPayment(true)}
-                          className="bg-orange-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-orange-600 transition-colors duration-300 flex items-center gap-2"
-                        >
-                          <Plus className="w-4 h-4" />
-                          Add New Card
-                        </button>
-                      ) : (
-                        <button 
-                          onClick={() => setAddingPayment(false)}
-                          className="text-gray-600 hover:text-gray-700"
-                        >
-                          <X className="w-5 h-5" />
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Add Payment Form */}
-                    {addingPayment && (
-                      <div className="mb-6 p-4 border-2 border-orange-200 rounded-xl bg-orange-50">
-                        <h3 className="font-semibold text-gray-900 mb-4">Add Payment Method</h3>
-                        <div className="space-y-3">
-                          <select
-                            value={paymentForm.type}
-                            onChange={(e) => setPaymentForm({...paymentForm, type: e.target.value})}
-                            className="w-full p-3 border border-gray-200 rounded-lg text-black"
-                          >
-                            <option value="credit_card">Credit Card</option>
-                            <option value="debit_card">Debit Card</option>
-                            <option value="upi">UPI</option>
-                          </select>
-
-                          {paymentForm.type !== 'upi' ? (
-                            <>
-                              <input
-                                type="text"
-                                placeholder="Card Number"
-                                value={paymentForm.cardNumber}
-                                onChange={(e) => setPaymentForm({...paymentForm, cardNumber: e.target.value})}
-                                className="w-full p-3 border border-gray-200 rounded-lg text-black"
-                              />
-                              <input
-                                type="text"
-                                placeholder="Name on Card"
-                                value={paymentForm.cardName}
-                                onChange={(e) => setPaymentForm({...paymentForm, cardName: e.target.value})}
-                                className="w-full p-3 border border-gray-200 rounded-lg text-black"
-                              />
-                              <div className="grid grid-cols-2 gap-3">
-                                <input
-                                  type="text"
-                                  placeholder="MM/YY"
-                                  value={paymentForm.expiry}
-                                  onChange={(e) => setPaymentForm({...paymentForm, expiry: e.target.value})}
-                                  className="w-full p-3 border border-gray-200 rounded-lg text-black"
-                                />
-                                <input
-                                  type="password"
-                                  placeholder="CVV"
-                                  value={paymentForm.cvv}
-                                  onChange={(e) => setPaymentForm({...paymentForm, cvv: e.target.value})}
-                                  className="w-full p-3 border border-gray-200 rounded-lg text-black"
-                                />
-                              </div>
-                            </>
-                          ) : (
-                            <input
-                              type="text"
-                              placeholder="UPI ID (e.g., name@okhdfcbank)"
-                              value={paymentForm.upiId}
-                              onChange={(e) => setPaymentForm({...paymentForm, upiId: e.target.value})}
-                              className="w-full p-3 border border-gray-200 rounded-lg text-black"
-                            />
-                          )}
-
-                          <label className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              checked={paymentForm.isDefault}
-                              onChange={(e) => setPaymentForm({...paymentForm, isDefault: e.target.checked})}
-                              className="rounded text-orange-500"
-                            />
-                            <span className="text-sm text-gray-700">Set as default payment method</span>
-                          </label>
-
-                          <div className="flex gap-3 mt-4">
-                            <button
-                              onClick={() => {
-                                // Add payment method logic
-                                setAddingPayment(false);
-                              }}
-                              className="flex-1 bg-orange-500 text-white py-2 rounded-lg font-semibold hover:bg-orange-600"
-                            >
-                              Save
-                            </button>
-                            <button
-                              onClick={() => setAddingPayment(false)}
-                              className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg font-semibold hover:bg-gray-50"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                    
-                    <div className="space-y-4">
-                      {paymentMethods.map((method) => (
-                        <div key={method.id} className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:border-orange-300 transition-colors duration-300">
-                          <div className="flex items-center gap-3">
-                            <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center">
-                              <CreditCard className="w-6 h-6 text-gray-600" />
-                            </div>
-                            <div>
-                              <h4 className="font-semibold text-gray-900">{method.name}</h4>
-                              <p className="text-sm text-gray-600">
-                                {method.type === 'credit_card' ? `•••• ${method.last4} • Expires ${method.expiry}` :
-                                 method.type === 'upi' ? `ID: ${method.id}` :
-                                 `Balance: ${method.balance}`}
-                              </p>
-                            </div>
-                          </div>
-                          
-                          <div className="flex items-center gap-4">
-                            {method.isDefault && (
-                              <span className="px-3 py-1 bg-green-100 text-green-700 text-sm font-semibold rounded-full">
-                                Default
-                              </span>
-                            )}
-                            <div className="flex gap-2">
-                              <button className="p-2 text-gray-500 hover:text-orange-600 hover:bg-orange-50 rounded-lg">
-                                <Edit className="w-4 h-4" />
-                              </button>
-                              {!method.isDefault && (
-                                <button className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg">
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-
-                      {paymentMethods.length === 0 && !addingPayment && (
-                        <div className="text-center py-12 text-gray-500">
-                          <CreditCard className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                          <p>No payment methods added yet</p>
-                        </div>
-                      )}
-                    </div>
-                    
-                    {/* Payment Security */}
-                    <div className="mt-8 p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border border-green-200">
-                      <div className="flex items-center gap-3">
-                        <Shield className="w-5 h-5 text-green-600" />
-                        <div>
-                          <h4 className="font-semibold text-gray-900">Payment Security</h4>
-                          <p className="text-sm text-gray-600">Your payment information is encrypted and secure</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Orders Tab */}
-              {activeTab === 'orders' && (
-                <div className="space-y-6">
-                  <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-                    <h2 className="text-xl font-bold text-gray-900 mb-6">My Orders</h2>
-                    
-                    <div className="space-y-4">
-                      {orders.map((order) => (
-                        <div key={order.id} className="border border-gray-200 rounded-xl p-5 hover:border-orange-300 transition-colors">
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                            <div className="flex items-center gap-3">
-                              <div className="w-12 h-12 bg-gradient-to-br from-orange-100 to-pink-100 rounded-lg flex items-center justify-center">
-                                <Package className="w-6 h-6 text-orange-600" />
-                              </div>
-                              <div>
-                                <h4 className="font-semibold text-gray-900">Order #{order.id}</h4>
-                                <p className="text-sm text-gray-600">{order.restaurantName}</p>
-                              </div>
-                            </div>
-                            
-                            <div className="flex items-center gap-4">
-                              <div className="text-right">
-                                <div className="font-bold text-gray-900">{currencySymbol}{order.total}</div>
-                                <div className="text-sm text-gray-500">{order.items.length} items</div>
-                              </div>
-                              <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                                order.status === 'delivered' ? 'bg-green-100 text-green-700' :
-                                order.status === 'preparing' ? 'bg-yellow-100 text-yellow-700' :
-                                order.status === 'on-the-way' ? 'bg-blue-100 text-blue-700' :
-                                'bg-gray-100 text-gray-700'
-                              }`}>
-                                {order.status || 'Pending'}
-                              </span>
-                            </div>
-                          </div>
-                          
-                          <div className="mt-4 pt-4 border-t border-gray-100 flex flex-wrap gap-4 justify-between items-center">
-                            <div className="flex items-center gap-2 text-sm text-gray-600">
-                              <Clock className="w-4 h-4" />
-                              {new Date(order.createdAt).toLocaleString()}
-                            </div>
-                            <button className="text-orange-600 hover:text-orange-700 font-semibold text-sm">
-                              Track Order
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                      
-                      {orders.length === 0 && (
-                        <div className="text-center py-12">
-                          <ShoppingBag className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                          <p className="text-gray-500 mb-4">No orders yet</p>
-                          <button
-                            onClick={() => router.push('/')}
-                            className="bg-orange-500 text-white px-6 py-2 rounded-lg font-semibold hover:bg-orange-600"
-                          >
-                            Browse Restaurants
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Favorites Tab */}
-              {activeTab === 'favorites' && (
-                <div className="space-y-6">
-                  <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-                    <h2 className="text-xl font-bold text-gray-900 mb-6">Favorite Items</h2>
-                    
-                    <div className="grid md:grid-cols-2 gap-6">
-                      {favorites.map((item) => (
-                        <div key={item.id} className="border border-gray-200 rounded-xl p-4 hover:border-orange-300 transition-colors">
-                          <div className="flex gap-3">
-                            <div className="w-16 h-16 bg-gray-100 rounded-lg overflow-hidden">
-                              {item.image ? (
-                                <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
-                              ) : (
-                                <div className="w-full h-full bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center">
-                                  <span className="text-gray-400 text-xl">🍽️</span>
-                                </div>
-                              )}
-                            </div>
-                            <div className="flex-1">
-                              <div className="flex justify-between">
-                                <h4 className="font-semibold text-gray-900">{item.name}</h4>
-                                <button className="text-red-500 hover:text-red-600">
-                                  <Heart className="w-4 h-4 fill-current" />
-                                </button>
-                              </div>
-                              <p className="text-sm text-gray-500 mb-2">{item.restaurantName}</p>
-                              <div className="flex items-center justify-between">
-                                <span className="font-bold text-gray-900">{currencySymbol}{item.price}</span>
-                                <button className="text-sm bg-orange-500 text-white px-3 py-1 rounded-lg hover:bg-orange-600">
-                                  Add to Cart
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                      
-                      {favorites.length === 0 && (
-                        <div className="col-span-2 text-center py-12">
-                          <Heart className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                          <p className="text-gray-500 mb-4">No favorite items yet</p>
-                          <button
-                            onClick={() => router.push('/')}
-                            className="bg-orange-500 text-white px-6 py-2 rounded-lg font-semibold hover:bg-orange-600"
-                          >
-                            Browse Items
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Preferences Tab */}
-              {activeTab === 'preferences' && (
-                <div className="space-y-6">
-                  <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-                    <div className="flex items-center justify-between mb-6">
-                      <h2 className="text-xl font-bold text-gray-900">Your Preferences</h2>
-                      <button
-                        onClick={updatePreferences}
-                        className="bg-orange-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-orange-600 flex items-center gap-2"
-                      >
-                        <Save className="w-4 h-4" />
-                        Save Changes
-                      </button>
-                    </div>
-                    
-                    <div className="space-y-8">
-                      {/* Diet Preferences */}
-                      <div>
-                        <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                          <Utensils className="w-5 h-5" />
-                          Diet Preferences
-                        </h3>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                          {Object.entries(preferences.diet).map(([key, value]) => (
-                            <label key={key} className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:border-orange-300 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={value}
-                                onChange={() => setPreferences({
-                                  ...preferences,
-                                  diet: { ...preferences.diet, [key]: !value }
-                                })}
-                                className="rounded text-orange-500"
-                              />
-                              <span className="font-medium text-gray-900 capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Delivery Preferences */}
-                      <div>
-                        <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                          <Truck className="w-5 h-5" />
-                          Delivery Preferences
-                        </h3>
-                        <div className="space-y-3">
-                          {Object.entries(preferences.delivery).map(([key, value]) => (
-                            <label key={key} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:border-orange-300 cursor-pointer">
-                              <div className="flex items-center gap-3">
-                                <input
-                                  type="checkbox"
-                                  checked={value}
-                                  onChange={() => setPreferences({
-                                    ...preferences,
-                                    delivery: { ...preferences.delivery, [key]: !value }
-                                  })}
-                                  className="rounded text-orange-500"
-                                />
-                                <span className="font-medium text-gray-900">
-                                  {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
-                                </span>
-                              </div>
-                              {key === 'contactless' && (
-                                <span className="text-sm text-green-600 bg-green-50 px-2 py-1 rounded">Recommended</span>
-                              )}
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Notification Preferences */}
-                      <div>
-                        <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                          <Bell className="w-5 h-5" />
-                          Notification Preferences
-                        </h3>
-                        <div className="space-y-3">
-                          {Object.entries(preferences.notifications).map(([key, value]) => (
-                            <label key={key} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:border-orange-300 cursor-pointer">
-                              <div className="flex items-center gap-3">
-                                <input
-                                  type="checkbox"
-                                  checked={value}
-                                  onChange={() => setPreferences({
-                                    ...preferences,
-                                    notifications: { ...preferences.notifications, [key]: !value }
-                                  })}
-                                  className="rounded text-orange-500"
-                                />
-                                <span className="font-medium text-gray-900">
-                                  {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
-                                </span>
-                              </div>
-                              {key === 'orderUpdates' && (
-                                <span className="text-sm text-blue-600 bg-blue-50 px-2 py-1 rounded">Important</span>
-                              )}
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Rewards Tab */}
-              {activeTab === 'rewards' && (
-                <div className="space-y-6">
-                  <div className="bg-gradient-to-r from-purple-500 to-pink-500 rounded-2xl p-8 text-white">
-                    <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-                      <div>
-                        <h2 className="text-2xl font-bold mb-2">Loyalty Rewards</h2>
-                        <p className="text-purple-100">Earn points with every order and unlock exclusive benefits</p>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-4xl font-bold mb-1">{userData.loyaltyPoints}</div>
-                        <div className="text-purple-200">Total Points</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-                    <h3 className="text-xl font-bold text-gray-900 mb-6">Available Rewards</h3>
-                    
-                    <div className="grid md:grid-cols-2 gap-6">
-                      {rewards.map((reward) => (
-                        <div key={reward.id} className={`p-5 border rounded-xl ${
-                          reward.status === 'earned' ? 'border-green-300 bg-green-50' :
-                          reward.status === 'in-progress' ? 'border-yellow-300 bg-yellow-50' :
-                          'border-gray-200 bg-gray-50'
-                        }`}>
-                          <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center gap-3">
-                              <div className={`p-2 rounded-lg ${
-                                reward.status === 'earned' ? 'bg-green-100' :
-                                reward.status === 'in-progress' ? 'bg-yellow-100' :
-                                'bg-gray-100'
-                              }`}>
-                                <Gift className={`w-5 h-5 ${
-                                  reward.status === 'earned' ? 'text-green-600' :
-                                  reward.status === 'in-progress' ? 'text-yellow-600' :
-                                  'text-gray-400'
-                                }`} />
-                              </div>
-                              <div>
-                                <h4 className="font-semibold text-gray-900">{reward.title}</h4>
-                                <div className="flex items-center gap-2 text-sm">
-                                  <Award className="w-4 h-4 text-yellow-500" />
-                                  <span className="font-semibold">{reward.points} points</span>
-                                </div>
-                              </div>
-                            </div>
-                            
-                            <span className={`px-3 py-1 text-sm font-semibold rounded-full ${
-                              reward.status === 'earned' ? 'bg-green-100 text-green-700' :
-                              reward.status === 'in-progress' ? 'bg-yellow-100 text-yellow-700' :
-                              'bg-gray-100 text-gray-500'
-                            }`}>
-                              {reward.status === 'earned' ? 'Claimed' :
-                               reward.status === 'in-progress' ? `${reward.progress}%` :
-                               'Locked'}
-                            </span>
-                          </div>
-                          
-                          {reward.status === 'in-progress' && (
-                            <div className="w-full bg-gray-200 rounded-full h-2 mb-3">
-                              <div 
-                                className="bg-gradient-to-r from-yellow-400 to-orange-500 h-2 rounded-full"
-                                style={{ width: `${reward.progress}%` }}
-                              ></div>
-                            </div>
-                          )}
-                          
-                          {reward.status === 'earned' && (
-                            <button className="w-full mt-3 bg-green-600 text-white py-2 rounded-lg font-semibold hover:bg-green-700 transition-colors duration-300">
-                              Use Reward
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                      
-                      {rewards.length === 0 && (
-                        <div className="col-span-2 text-center py-12">
-                          <Gift className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                          <p className="text-gray-500">No rewards available yet</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Notifications Tab */}
-              {activeTab === 'notifications' && (
-                <div className="space-y-6">
-                  <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-                    <h2 className="text-xl font-bold text-gray-900 mb-6">Notifications</h2>
-                    
-                    <div className="space-y-3">
-                      {notifications.map((notif) => (
-                        <div key={notif.id} className={`p-4 rounded-lg border ${
-                          notif.read ? 'border-gray-200 bg-white' : 'border-orange-200 bg-orange-50'
-                        }`}>
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex-1">
-                              <h4 className="font-semibold text-gray-900">{notif.title}</h4>
-                              <p className="text-sm text-gray-600 mt-1">{notif.message}</p>
-                              <p className="text-xs text-gray-500 mt-2">{new Date(notif.createdAt).toLocaleString()}</p>
-                            </div>
-                            {!notif.read && (
-                              <span className="w-2 h-2 bg-orange-500 rounded-full"></span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                      
-                      {notifications.length === 0 && (
-                        <div className="text-center py-12">
-                          <Bell className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                          <p className="text-gray-500">No notifications</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Help Tab */}
-              {activeTab === 'help' && (
-                <div className="space-y-6">
-                  <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-                    <h2 className="text-xl font-bold text-gray-900 mb-6">Help & Support</h2>
-                    
-                    <div className="space-y-4">
-                      <div className="p-4 border border-gray-200 rounded-lg">
-                        <h3 className="font-semibold text-gray-900 mb-2">Frequently Asked Questions</h3>
-                        <div className="space-y-2">
-                          {[
-                            'How do I track my order?',
-                            'What is your return policy?',
-                            'How can I change my delivery address?',
-                            'What payment methods do you accept?'
-                          ].map((question, i) => (
-                            <button key={i} className="w-full text-left p-2 hover:bg-gray-50 rounded-lg text-gray-600 text-sm">
-                              {question}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      
-                      <div className="p-4 bg-gradient-to-r from-blue-50 to-cyan-50 rounded-lg">
-                        <h3 className="font-semibold text-gray-900 mb-2">Contact Support</h3>
-                        <p className="text-sm text-gray-600 mb-3">Get help from our support team</p>
-                        <button className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600">
-                          Contact Us
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
+              {activeTab === "profile" && renderProfile()}
+              {activeTab === "addresses" && renderAddresses()}
+              {activeTab === "payments" && renderPayments()}
+              {activeTab === "orders" && renderOrders()}
+              {activeTab === "favorites" && renderFavorites()}
+              {activeTab === "preferences" && renderPreferences()}
+              {activeTab === "notifications" && renderNotifications()}
+              {activeTab === "rewards" && renderRewards()}
+              {activeTab === "help" && renderHelp()}
             </div>
           </div>
 
-          {/* Logout Button */}
           <div className="mt-8 text-center">
-            <button 
+            <button
               onClick={handleLogout}
-              className="inline-flex items-center gap-2 text-gray-600 hover:text-red-600 font-semibold"
+              className="inline-flex items-center gap-2 text-gray-600 hover:text-rose-600 font-semibold"
             >
               <LogOut className="w-5 h-5" />
               Logout
@@ -1610,10 +1468,85 @@ const Page = () => {
           </div>
         </div>
       </div>
-      
+
       <Footer />
     </>
-  )
-}
+  );
+};
 
-export default Page
+const StatCard = ({ icon, value, label }) => (
+  <div className="bg-white rounded-xl p-4 border border-purple-100 shadow-sm">
+    <div className="flex items-center justify-between mb-2">{icon}</div>
+    <p className="text-2xl font-bold text-gray-900">{value}</p>
+    <p className="text-sm text-gray-600">{label}</p>
+  </div>
+);
+
+const EmptyState = ({ icon, title, description, action, onClick }) => (
+  <div className="bg-white rounded-xl p-12 text-center border border-gray-200">
+    {icon}
+    <h3 className="text-xl font-semibold text-gray-700 mb-2">{title}</h3>
+    <p className="text-gray-500 mb-4">{description}</p>
+    {action && (
+      <button
+        onClick={onClick}
+        className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl"
+      >
+        {action}
+      </button>
+    )}
+  </div>
+);
+
+const PreferenceGroup = ({ title, data, onChange }) => (
+  <div className="border-b border-gray-100 pb-4 last:border-b-0">
+    <h3 className="font-semibold text-gray-900 mb-3">{title}</h3>
+
+    <div className="space-y-2">
+      {Object.entries(data).map(([key, value]) => (
+        <label key={key} className="flex items-center justify-between py-2">
+          <span className="text-gray-700 capitalize">
+            {key.replace(/([A-Z])/g, " $1").trim()}
+          </span>
+
+          <input
+            type="checkbox"
+            checked={value}
+            onChange={(e) => onChange(key, e.target.checked)}
+            className="w-5 h-5 text-purple-600 rounded"
+          />
+        </label>
+      ))}
+    </div>
+  </div>
+);
+
+const AlertBox = ({ type, message, onClose }) => {
+  const isError = type === "error";
+
+  return (
+    <div
+      className={`mb-6 p-4 border rounded-lg flex items-center gap-3 ${
+        isError
+          ? "bg-red-50 border-red-200 text-red-700"
+          : "bg-green-50 border-green-200 text-green-700"
+      }`}
+    >
+      {isError ? (
+        <AlertCircle className="w-5 h-5 flex-shrink-0" />
+      ) : (
+        <Check className="w-5 h-5 flex-shrink-0" />
+      )}
+
+      <p className="flex-1">{message}</p>
+
+      {onClose && (
+        <button onClick={onClose}>
+          <X className="w-5 h-5" />
+        </button>
+      )}
+    </div>
+  );
+};
+
+export default Page;

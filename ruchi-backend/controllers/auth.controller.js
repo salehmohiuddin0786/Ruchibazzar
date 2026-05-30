@@ -1,244 +1,299 @@
 const bcrypt = require("bcryptjs");
+const axios = require("axios");
 const { User, Restaurant } = require("../models");
 const generateToken = require("../utils/generateToken");
 
-// Roles
 const ROLES = {
   CUSTOMER: "customer",
   PARTNER: "partner",
   ADMIN: "admin",
 };
 
-/*
-|--------------------------------------------------------------------------
-| REGISTER (Password OR OTP)
-|--------------------------------------------------------------------------
-*/
-exports.register = async (req, res) => {
+const normalizeIndianPhone = (phone) => {
+  const digits = String(phone || "").replace(/\D/g, "");
+  const withoutCountryCode =
+    digits.startsWith("91") && digits.length === 12 ? digits.slice(2) : digits;
+
+  if (!/^[6-9]\d{9}$/.test(withoutCountryCode)) {
+    return null;
+  }
+
+  return withoutCountryCode;
+};
+
+const verifyFirebasePhoneToken = async (idToken, expectedPhone) => {
+  const apiKey = process.env.FIREBASE_WEB_API_KEY;
+
+  if (!apiKey) {
+    const error = new Error("Firebase API key missing");
+    error.statusCode = 500;
+    throw error;
+  }
+
+  if (!idToken) {
+    const error = new Error("Firebase verification token is required");
+    error.statusCode = 400;
+    throw error;
+  }
+
   try {
-    const {
-      name,
-      email,
-      phone,
-      password,
-      role,
-      restaurantName,
-      isOtpUser = false,
-    } = req.body;
+    const response = await axios.post(
+      `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${apiKey}`,
+      { idToken },
+      { headers: { "Content-Type": "application/json" } }
+    );
+    const firebasePhone = normalizeIndianPhone(response.data?.users?.[0]?.phoneNumber);
 
-    // ✅ VALIDATION
-    if (!name || (!email && !phone)) {
-      return res.status(400).json({
-        message: "Name and (email or phone) are required",
-      });
+    if (!firebasePhone || firebasePhone !== expectedPhone) {
+      const error = new Error("Firebase phone verification failed");
+      error.statusCode = 401;
+      throw error;
     }
 
-    // 🔍 CHECK EXISTING USER
-    let existingUser = null;
-
-    if (email) {
-      existingUser = await User.findOne({ where: { email } });
-    }
-    if (!existingUser && phone) {
-      existingUser = await User.findOne({ where: { phone } });
-    }
-
-    if (existingUser) {
-      return res.status(400).json({
-        message: "User already exists",
-      });
-    }
-
-    // 🔐 PASSWORD HANDLING
-    let hashedPassword = null;
-
-    if (!isOtpUser) {
-      if (!password) {
-        return res.status(400).json({
-          message: "Password is required",
-        });
-      }
-      hashedPassword = await bcrypt.hash(password, 10);
-    }
-
-    // 🎭 ROLE LOGIC
-    let userRole = role === ROLES.PARTNER ? ROLES.PARTNER : ROLES.CUSTOMER;
-
-    if (role === ROLES.ADMIN) {
-      return res.status(403).json({
-        message: "Admin registration not allowed",
-      });
-    }
-
-    // 👤 CREATE USER
-    const user = await User.create({
-      name,
-      email,
-      phone,
-      password: hashedPassword,
-      role: userRole,
-      isVerified: isOtpUser ? true : false,
-      authProvider: isOtpUser ? "otp" : "password",
-    });
-
-    let restaurant = null;
-
-    // 🍽️ CREATE RESTAURANT FOR PARTNER
-    if (userRole === ROLES.PARTNER) {
-      if (!restaurantName) {
-        return res.status(400).json({
-          message: "Restaurant name is required",
-        });
-      }
-
-      restaurant = await Restaurant.create({
-        name: restaurantName,
-        ownerId: user.id,
-      });
-    }
-
-    const token = generateToken(user.id);
-
-    res.status(201).json({
-      message: "Registered successfully",
-      token,
-      user,
-      restaurant,
-    });
-
+    return response.data.users[0];
   } catch (error) {
-    console.error("Register Error:", error);
-    res.status(500).json({ message: "Server error" });
+    if (error.statusCode) throw error;
+
+    const firebaseError = new Error(
+      error.response?.data?.error?.message || "Firebase phone verification failed"
+    );
+    firebaseError.statusCode = error.response?.status || 401;
+    throw firebaseError;
   }
 };
 
-/*
-|--------------------------------------------------------------------------
-| LOGIN (Password OR OTP)
-|--------------------------------------------------------------------------
-*/
-exports.login = async (req, res) => {
+const formatUserResponse = (user) => ({
+  id: user.id,
+  name: user.name,
+  email: user.email,
+  phone: user.phone,
+  role: user.role,
+  isVerified: user.isVerified,
+});
+
+const register = async (req, res) => {
   try {
-    const { email, password, phone, isOtpLogin = false } = req.body;
+    const { name, email, phone: rawPhone, password, role, firebaseIdToken } = req.body || {};
+    const phone = normalizeIndianPhone(rawPhone);
 
-    let user;
-
-    // 🔥 OTP LOGIN
-    if (isOtpLogin) {
-      if (!phone) {
-        return res.status(400).json({
-          message: "Phone is required",
-        });
-      }
-
-      user = await User.findOne({ where: { phone } });
-
-      if (!user) {
-        return res.status(400).json({
-          message: "User not found",
-        });
-      }
-
-      if (!user.isVerified) {
-        return res.status(403).json({
-          message: "Phone not verified",
-        });
-      }
-    }
-
-    // 🔐 PASSWORD LOGIN
-    else {
-      if (!email || !password) {
-        return res.status(400).json({
-          message: "Email and password are required",
-        });
-      }
-
-      user = await User.findOne({ where: { email } });
-
-      if (!user) {
-        return res.status(400).json({
-          message: "Invalid credentials",
-        });
-      }
-
-      if (!user.password) {
-        return res.status(400).json({
-          message: "Use OTP login for this account",
-        });
-      }
-
-      const isMatch = await bcrypt.compare(password, user.password);
-
-      if (!isMatch) {
-        return res.status(400).json({
-          message: "Invalid credentials",
-        });
-      }
-    }
-
-    const token = generateToken(user.id);
-
-    // 🎯 CUSTOMER RESPONSE
-    if (user.role === ROLES.CUSTOMER) {
-      return res.json({
-        message: "Customer login successful",
-        token,
-        role: "customer",
-        user,
+    if (!name || !email || !phone) {
+      return res.status(400).json({
+        success: false,
+        message: "Name, email and valid phone are required",
       });
     }
 
-    // 🎯 PARTNER RESPONSE
-    if (user.role === ROLES.PARTNER) {
+    if (role === ROLES.ADMIN) {
+      return res.status(403).json({
+        success: false,
+        message: "Admin registration is not allowed",
+      });
+    }
+
+    if (!password) {
+      return res.status(400).json({
+        success: false,
+        message: "Password required",
+      });
+    }
+
+    await verifyFirebasePhoneToken(firebaseIdToken, phone);
+
+    const userRole = role === ROLES.PARTNER ? ROLES.PARTNER : ROLES.CUSTOMER;
+    const existingEmail = await User.findOne({ where: { email } });
+    const existingPhone = await User.findOne({ where: { phone } });
+
+    if (existingPhone) {
+      if (existingEmail && existingEmail.id !== existingPhone.id) {
+        return res.status(400).json({
+          success: false,
+          message: "This email is already used by another account",
+        });
+      }
+
+      existingPhone.name = name;
+      existingPhone.email = email;
+      existingPhone.role = userRole;
+      existingPhone.isVerified = true;
+      existingPhone.authProvider = "password";
+      existingPhone.password = await bcrypt.hash(password, 10);
+
+      await existingPhone.save();
+
       const restaurant = await Restaurant.findOne({
-        where: { ownerId: user.id },
+        where: { ownerId: existingPhone.id },
       });
+      const token = generateToken(existingPhone.id);
 
-      return res.json({
-        message: "Partner login successful",
+      return res.status(200).json({
+        success: true,
+        message: "User updated successfully",
         token,
-        role: "partner",
-        user,
+        user: formatUserResponse(existingPhone),
         restaurant,
       });
     }
 
+    if (existingEmail) {
+      return res.status(400).json({
+        success: false,
+        message: "Email already registered. Please login or use another email.",
+      });
+    }
+
+    const user = await User.create({
+      name,
+      email,
+      phone,
+      password: await bcrypt.hash(password, 10),
+      role: userRole,
+      isVerified: true,
+      authProvider: "password",
+    });
+
+    const token = generateToken(user.id);
+
+    return res.status(201).json({
+      success: true,
+      message: "User created successfully",
+      token,
+      user: formatUserResponse(user),
+      restaurant: null,
+    });
   } catch (error) {
-    console.error("Login Error:", error);
-    res.status(500).json({ message: "Server error" });
+    console.error("Register Error:", error);
+
+    if (error.name === "SequelizeUniqueConstraintError") {
+      return res.status(400).json({
+        success: false,
+        message: "Email or phone already exists",
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Server error",
+    });
   }
 };
 
-/*
-|--------------------------------------------------------------------------
-| OPTIONAL: Partner Login (Password only)
-|--------------------------------------------------------------------------
-*/
-exports.loginPartner = async (req, res) => {
+const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password } = req.body || {};
 
-    const user = await User.findOne({
-      where: { email, role: ROLES.PARTNER },
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Email & password required",
+      });
+    }
+
+    const user = await User.findOne({ where: { email } });
+
+    if (!user || !user.password) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid credentials",
+      });
+    }
+
+    const match = await bcrypt.compare(password, user.password);
+
+    if (!match) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid credentials",
+      });
+    }
+
+    const token = generateToken(user.id);
+
+    return res.json({
+      success: true,
+      message: "Login successful",
+      requiresOtp: false,
+      token,
+      user,
     });
+  } catch (error) {
+    console.error("Login Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Server error",
+    });
+  }
+};
+
+const loginWithPhone = async (req, res) => {
+  try {
+    const phone = normalizeIndianPhone(req.body?.phone);
+    const { firebaseIdToken } = req.body || {};
+
+    if (!phone) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid 10 digit Indian phone number is required",
+      });
+    }
+
+    await verifyFirebasePhoneToken(firebaseIdToken, phone);
+
+    const user = await User.findOne({ where: { phone } });
 
     if (!user) {
       return res.status(400).json({
-        message: "Restaurant account not found",
+        success: false,
+        message: "User not found",
       });
     }
 
-    if (!user.password) {
+    const token = generateToken(user.id);
+
+    return res.json({
+      success: true,
+      message: "Login successful",
+      token,
+      user,
+    });
+  } catch (error) {
+    console.error("Phone Login Error:", error);
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Phone login failed",
+    });
+  }
+};
+
+const loginPartner = async (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+
+    if (!email || !password) {
       return res.status(400).json({
-        message: "Use OTP login",
+        success: false,
+        message: "Email and password required",
       });
     }
 
-    const isMatch = await bcrypt.compare(password, user.password);
+    const user = await User.findOne({
+      where: {
+        email,
+        role: ROLES.PARTNER,
+      },
+    });
 
-    if (!isMatch) {
+    if (!user || !user.password) {
       return res.status(400).json({
+        success: false,
+        message: "Partner not found",
+      });
+    }
+
+    const match = await bcrypt.compare(password, user.password);
+
+    if (!match) {
+      return res.status(400).json({
+        success: false,
         message: "Invalid credentials",
       });
     }
@@ -249,16 +304,25 @@ exports.loginPartner = async (req, res) => {
 
     const token = generateToken(user.id);
 
-    res.json({
-      message: "Restaurant login successful",
+    return res.json({
+      success: true,
+      message: "Partner login successful",
       token,
-      role: "partner",
       user,
       restaurant,
     });
-
   } catch (error) {
     console.error("Partner Login Error:", error);
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Server error",
+    });
   }
+};
+
+module.exports = {
+  register,
+  login,
+  loginWithPhone,
+  loginPartner,
 };

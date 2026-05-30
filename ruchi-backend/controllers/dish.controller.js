@@ -7,15 +7,12 @@ const createDish = async (req, res) => {
   try {
     let { name, description, price, restaurantId } = req.body;
 
-    // Trim string values safely
     name = name ? name.trim() : "";
     description = description ? description.trim() : "";
 
-    // Convert numbers safely
     price = Number(price);
     restaurantId = Number(restaurantId);
 
-    // ================= VALIDATION =================
     if (!name) {
       return res.status(400).json({
         success: false,
@@ -37,7 +34,6 @@ const createDish = async (req, res) => {
       });
     }
 
-    // Check restaurant exists
     const restaurant = await Restaurant.findByPk(restaurantId);
     if (!restaurant) {
       return res.status(404).json({
@@ -46,7 +42,6 @@ const createDish = async (req, res) => {
       });
     }
 
-    // Create dish
     const dish = await Dish.create({
       name,
       description: description || null,
@@ -71,8 +66,9 @@ const createDish = async (req, res) => {
   }
 };
 
+
 // ==================================================
-// GET ALL DISHES (Pagination)
+// GET ALL DISHES (FIXED)
 // ==================================================
 const getAllDishes = async (req, res) => {
   try {
@@ -88,6 +84,7 @@ const getAllDishes = async (req, res) => {
       include: [
         {
           model: Restaurant,
+          as: "restaurant",   // 🔥 THIS IS THE FIX
           attributes: ["id", "name"]
         }
       ],
@@ -114,6 +111,7 @@ const getAllDishes = async (req, res) => {
   }
 };
 
+
 // ==================================================
 // GET DISHES BY RESTAURANT
 // ==================================================
@@ -125,14 +123,6 @@ const getDishesByRestaurant = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Invalid restaurantId"
-      });
-    }
-
-    const restaurant = await Restaurant.findByPk(restaurantId);
-    if (!restaurant) {
-      return res.status(404).json({
-        success: false,
-        message: "Restaurant not found"
       });
     }
 
@@ -157,19 +147,13 @@ const getDishesByRestaurant = async (req, res) => {
   }
 };
 
+
 // ==================================================
 // UPDATE DISH
 // ==================================================
 const updateDish = async (req, res) => {
   try {
     const id = Number(req.params.id);
-
-    if (!id || isNaN(id)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid dish ID"
-      });
-    }
 
     const dish = await Dish.findByPk(id);
 
@@ -182,13 +166,9 @@ const updateDish = async (req, res) => {
 
     const updates = {};
 
-    if (req.body.name) {
-      updates.name = req.body.name.trim();
-    }
-
-    if (req.body.description !== undefined) {
+    if (req.body.name) updates.name = req.body.name.trim();
+    if (req.body.description !== undefined)
       updates.description = req.body.description.trim();
-    }
 
     if (req.body.price !== undefined) {
       const parsedPrice = Number(req.body.price);
@@ -197,12 +177,6 @@ const updateDish = async (req, res) => {
       }
     }
 
-    // Prevent restaurantId change
-    if (req.body.restaurantId) {
-      delete req.body.restaurantId;
-    }
-
-    // Image update
     if (req.file) {
       updates.image = req.file.filename;
     }
@@ -225,19 +199,13 @@ const updateDish = async (req, res) => {
   }
 };
 
+
 // ==================================================
 // DELETE DISH
 // ==================================================
 const deleteDish = async (req, res) => {
   try {
     const id = Number(req.params.id);
-
-    if (!id || isNaN(id)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid dish ID"
-      });
-    }
 
     const dish = await Dish.findByPk(id);
 
