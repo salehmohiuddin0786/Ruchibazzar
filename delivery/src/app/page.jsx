@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import SuperLayout from "./SuperLayout/page";
+import { deliveryApi, formatRupee } from "./lib/deliveryApi";
 import {
   Package,
   IndianRupee,
@@ -42,6 +43,37 @@ export default function EnhancedDeliveryDashboard() {
   const [currentTime, setCurrentTime] = useState('');
   const [showNotifications, setShowNotifications] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [dashboardData, setDashboardData] = useState(null);
+  const [isLoadingDashboard, setIsLoadingDashboard] = useState(true);
+  const [dashboardError, setDashboardError] = useState("");
+  const [isTogglingAvailability, setIsTogglingAvailability] = useState(false);
+  const [updatingDeliveryId, setUpdatingDeliveryId] = useState(null);
+
+  const loadDashboard = async (silent = false) => {
+    if (!silent) setIsLoadingDashboard(true);
+    setDashboardError("");
+
+    try {
+      const data = await deliveryApi('/delivery/dashboard');
+      setDashboardData(data);
+      setOnlineStatus(Boolean(data.stats?.isAvailable));
+    } catch (err) {
+      setDashboardError(err.message || "Failed to load dashboard");
+    } finally {
+      if (!silent) setIsLoadingDashboard(false);
+    }
+  };
+
+  useEffect(() => {
+    loadDashboard();
+    const intervalId = setInterval(() => loadDashboard(true), 15000);
+    const handleOrdersChanged = () => loadDashboard(true);
+    window.addEventListener("deliveryOrdersChanged", handleOrdersChanged);
+    return () => {
+      clearInterval(intervalId);
+      window.removeEventListener("deliveryOrdersChanged", handleOrdersChanged);
+    };
+  }, []);
 
   // Update time every minute
   useEffect(() => {
@@ -186,6 +218,106 @@ export default function EnhancedDeliveryDashboard() {
     },
   ];
 
+  const liveStats = dashboardData?.stats;
+  const displayStats = liveStats
+    ? [
+        {
+          ...stats[0],
+          value: String(liveStats.activeOrders || 0),
+          trend: `${dashboardData?.activeDeliveries?.length || 0} live`,
+        },
+        {
+          ...stats[1],
+          value: formatRupee(liveStats.todaysEarnings || 0),
+          trend: "Today",
+        },
+        {
+          ...stats[2],
+          value: String(liveStats.totalDeliveries || 0),
+          trend: "Lifetime",
+        },
+        {
+          ...stats[3],
+          value: Number(liveStats.rating || 0).toFixed(1),
+          trend: liveStats.kycStatus ? `KYC ${liveStats.kycStatus}` : "Rating",
+        },
+      ]
+    : stats;
+  const displayActiveDeliveries = dashboardData
+    ? dashboardData.activeDeliveries || []
+    : [];
+  const displayUser = dashboardData?.user;
+
+  const normalizeDeliveryStatus = (status) => {
+    const value = String(status || "").toLowerCase();
+    if (value === "picked_up") return "picked";
+    if (value === "out_for_delivery") return "on_the_way";
+    return value;
+  };
+
+  const filteredActiveDeliveries = displayActiveDeliveries.filter((delivery) => {
+    if (selectedFilter === "all") return true;
+    return normalizeDeliveryStatus(delivery.status) === selectedFilter;
+  });
+
+  const getDeliveryRawId = (delivery) =>
+    delivery.rawId || String(delivery.id || "").replace(/\D/g, "");
+
+  const getItemCount = (delivery) =>
+    Array.isArray(delivery.items) ? delivery.items.length : Number(delivery.items || 0);
+
+  const getShortAddress = (address) => String(address || "Address not available").split(",")[0];
+
+  const getMapUrl = (address) =>
+    address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}` : "";
+
+  const callCustomer = (phone) => {
+    const cleanPhone = String(phone || "").replace(/[^\d+]/g, "");
+    if (!cleanPhone) return;
+    window.location.href = `tel:${cleanPhone}`;
+  };
+
+  const openNavigation = (address) => {
+    const url = getMapUrl(address);
+    if (url) window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const toggleAvailability = async () => {
+    setIsTogglingAvailability(true);
+    setDashboardError("");
+
+    try {
+      const nextStatus = !onlineStatus;
+      await deliveryApi("/delivery/availability", {
+        method: "PUT",
+        body: JSON.stringify({ isAvailable: nextStatus }),
+      });
+      setOnlineStatus(nextStatus);
+      await loadDashboard(true);
+    } catch (err) {
+      setDashboardError(err.message || "Failed to update availability");
+    } finally {
+      setIsTogglingAvailability(false);
+    }
+  };
+
+  const updateDeliveryStep = async (delivery, action) => {
+    const orderId = getDeliveryRawId(delivery);
+    if (!orderId) return;
+
+    setUpdatingDeliveryId(delivery.id);
+    setDashboardError("");
+
+    try {
+      await deliveryApi(`/delivery/${action}/${orderId}`, { method: "PUT" });
+      await loadDashboard(true);
+    } catch (err) {
+      setDashboardError(err.message || "Failed to update delivery");
+    } finally {
+      setUpdatingDeliveryId(null);
+    }
+  };
+
   const getStatusBadge = (status) => {
     const statusConfig = {
       assigned: { 
@@ -194,11 +326,29 @@ export default function EnhancedDeliveryDashboard() {
         label: "Assigned",
         gradient: "from-yellow-500 to-yellow-600"
       },
-      picked_up: { 
+      picked: {
         color: "bg-blue-100 text-blue-700 border-blue-200", 
         icon: Package, 
         label: "Picked Up",
         gradient: "from-blue-500 to-blue-600"
+      },
+      picked_up: {
+        color: "bg-blue-100 text-blue-700 border-blue-200",
+        icon: Package,
+        label: "Picked Up",
+        gradient: "from-blue-500 to-blue-600"
+      },
+      on_the_way: {
+        color: "bg-indigo-100 text-indigo-700 border-indigo-200",
+        icon: Navigation,
+        label: "On The Way",
+        gradient: "from-indigo-500 to-indigo-600"
+      },
+      delivered: {
+        color: "bg-green-100 text-green-700 border-green-200",
+        icon: CheckCircle,
+        label: "Delivered",
+        gradient: "from-green-500 to-green-600"
       },
       waiting: { 
         color: "bg-orange-100 text-orange-700 border-orange-200", 
@@ -207,7 +357,7 @@ export default function EnhancedDeliveryDashboard() {
         gradient: "from-orange-500 to-orange-600"
       },
     };
-    const config = statusConfig[status];
+    const config = statusConfig[normalizeDeliveryStatus(status)];
     const Icon = config?.icon || Package;
     return (
       <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium border ${config?.color}`}>
@@ -223,11 +373,12 @@ export default function EnhancedDeliveryDashboard() {
       medium: { color: "bg-yellow-100 text-yellow-700 border-yellow-200", label: "Medium", icon: Clock },
       low: { color: "bg-green-100 text-green-700 border-green-200", label: "Low", icon: CheckCircle },
     };
-    const Icon = priorityConfig[priority].icon;
+    const config = priorityConfig[priority] || priorityConfig.medium;
+    const Icon = config.icon;
     return (
-      <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-full ${priorityConfig[priority].color}`}>
+      <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-full ${config.color}`}>
         <Icon className="w-3 h-3" />
-        {priorityConfig[priority].label}
+        {config.label}
       </span>
     );
   };
@@ -286,11 +437,11 @@ export default function EnhancedDeliveryDashboard() {
                 <div>
                   <div className="flex items-center gap-2 mb-1">
                     <h1 className="text-lg md:text-2xl font-bold">
-                      Welcome back, Rajesh! 👋
+                      Welcome back, {displayUser?.name || "Partner"}! 👋
                     </h1>
-                    <span className="bg-green-400 text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span>
-                      <span>Online</span>
+                    <span className={`${onlineStatus ? "bg-green-400" : "bg-gray-400"} text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1`}>
+                      <span className={`w-1.5 h-1.5 bg-white rounded-full ${onlineStatus ? "animate-pulse" : ""}`}></span>
+                      <span>{onlineStatus ? "Online" : "Offline"}</span>
                     </span>
                   </div>
                   <p className="text-xs md:text-sm text-blue-100">
@@ -301,8 +452,12 @@ export default function EnhancedDeliveryDashboard() {
                   <button className="flex-1 md:flex-none bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg text-xs md:text-sm font-medium transition-colors backdrop-blur-sm">
                     Schedule
                   </button>
-                  <button className="flex-1 md:flex-none bg-white text-blue-600 px-4 py-2 rounded-lg text-xs md:text-sm font-medium hover:bg-blue-50 transition-colors shadow-lg">
-                    Start Shift
+                  <button
+                    onClick={toggleAvailability}
+                    disabled={isTogglingAvailability}
+                    className="flex-1 md:flex-none bg-white text-blue-600 px-4 py-2 rounded-lg text-xs md:text-sm font-medium hover:bg-blue-50 transition-colors shadow-lg disabled:opacity-60"
+                  >
+                    {isTogglingAvailability ? "Updating..." : onlineStatus ? "On Shift" : "Start Shift"}
                   </button>
                 </div>
               </div>
@@ -344,9 +499,23 @@ export default function EnhancedDeliveryDashboard() {
             </div>
           </div>
 
+          {dashboardError && (
+            <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4" />
+              <span>{dashboardError}</span>
+            </div>
+          )}
+
+          {isLoadingDashboard && (
+            <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700 flex items-center gap-2">
+              <Clock className="w-4 h-4 animate-pulse" />
+              <span>Loading live dashboard...</span>
+            </div>
+          )}
+
           {/* Stats Cards - Responsive Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-4 md:mb-6">
-            {stats.map((stat, index) => (
+            {displayStats.map((stat, index) => (
               <div 
                 key={index} 
                 className="bg-white rounded-xl md:rounded-2xl shadow-sm border border-gray-100 p-4 hover:shadow-md transition-all"
@@ -389,11 +558,12 @@ export default function EnhancedDeliveryDashboard() {
                       </div>
                       <span className="text-sm md:text-base font-semibold">You're {onlineStatus ? 'Online' : 'Offline'}</span>
                     </div>
-                    <button 
-                      onClick={() => setOnlineStatus(!onlineStatus)}
-                      className="bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors backdrop-blur-sm"
+                    <button
+                      onClick={toggleAvailability}
+                      disabled={isTogglingAvailability}
+                      className="bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors backdrop-blur-sm disabled:opacity-60"
                     >
-                      Go {onlineStatus ? 'Offline' : 'Online'}
+                      {isTogglingAvailability ? "Updating..." : `Go ${onlineStatus ? 'Offline' : 'Online'}`}
                     </button>
                   </div>
                   
@@ -406,11 +576,11 @@ export default function EnhancedDeliveryDashboard() {
                   <div className="grid grid-cols-2 gap-2 w-full">
                     <div className="bg-white/10 rounded-lg p-2 md:p-3">
                       <p className="text-[10px] md:text-xs text-white/70">Acceptance</p>
-                      <p className="text-sm md:text-base font-semibold">98%</p>
+                      <p className="text-sm md:text-base font-semibold">{onlineStatus ? "Online" : "Offline"}</p>
                     </div>
                     <div className="bg-white/10 rounded-lg p-2 md:p-3">
                       <p className="text-[10px] md:text-xs text-white/70">Completion</p>
-                      <p className="text-sm md:text-base font-semibold">100%</p>
+                      <p className="text-sm md:text-base font-semibold">{liveStats?.totalDeliveries || 0}</p>
                     </div>
                   </div>
                 </div>
@@ -462,14 +632,14 @@ export default function EnhancedDeliveryDashboard() {
                   <h2 className="text-base md:text-lg font-semibold text-gray-900">Active Deliveries</h2>
                   <span className="bg-blue-100 text-blue-600 text-xs font-medium px-2 py-1 rounded-full flex items-center gap-1">
                     <Package className="w-3 h-3" />
-                    {activeDeliveries.length}
+                    {filteredActiveDeliveries.length}
                   </span>
                 </div>
                 
                 {/* Filter buttons - Horizontal scroll on mobile */}
                 <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
                   <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg flex-shrink-0">
-                    {['all', 'assigned', 'picked', 'waiting'].map((filter) => (
+                    {['all', 'assigned', 'picked', 'on_the_way'].map((filter) => (
                       <button
                         key={filter}
                         onClick={() => setSelectedFilter(filter)}
@@ -479,13 +649,13 @@ export default function EnhancedDeliveryDashboard() {
                             : 'text-gray-600 hover:text-gray-900'
                         }`}
                       >
-                        {filter === 'picked' ? 'Picked' : filter.charAt(0).toUpperCase() + filter.slice(1)}
+                        {filter === 'on_the_way' ? 'On Way' : filter === 'picked' ? 'Picked' : filter.charAt(0).toUpperCase() + filter.slice(1)}
                       </button>
                     ))}
                   </div>
                   
                   <Link 
-                    href="/delivery/orders" 
+                    href="/Orders" 
                     className="text-xs md:text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1 font-medium bg-blue-50 px-3 py-2 rounded-lg hover:bg-blue-100 transition-colors whitespace-nowrap flex-shrink-0"
                   >
                     <span>View All</span>
@@ -497,7 +667,7 @@ export default function EnhancedDeliveryDashboard() {
 
             {/* Deliveries List */}
             <div className="divide-y divide-gray-100">
-              {activeDeliveries.map((delivery) => (
+              {filteredActiveDeliveries.map((delivery) => (
                 <div key={delivery.id} className="p-4 md:p-6 hover:bg-gray-50 transition-colors">
                   {/* Top Row */}
                   <div className="flex flex-col sm:flex-row items-start justify-between gap-2 mb-3">
@@ -515,7 +685,7 @@ export default function EnhancedDeliveryDashboard() {
                             Code: {delivery.pickupCode}
                           </span>
                           <span className="text-[10px] bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full">
-                            {delivery.items.length} items
+                            {getItemCount(delivery)} items
                           </span>
                         </div>
                       </div>
@@ -530,13 +700,13 @@ export default function EnhancedDeliveryDashboard() {
                     {/* Customer Info */}
                     <div className="flex items-start gap-2">
                       <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
-                        {delivery.customer.charAt(0)}
+                        {delivery.customer?.charAt(0) || "C"}
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-xs md:text-sm font-medium text-gray-900 truncate">{delivery.customer}</p>
                         <p className="text-[10px] md:text-xs text-gray-500 flex items-center gap-1">
                           <MapPin className="w-3 h-3 flex-shrink-0" />
-                          <span className="truncate">{delivery.address.split(',')[0]}</span>
+                          <span className="truncate">{getShortAddress(delivery.address)}</span>
                         </p>
                         {delivery.customerNote && (
                           <p className="text-[10px] text-blue-600 bg-blue-50 p-1 rounded mt-1 truncate">
@@ -553,7 +723,7 @@ export default function EnhancedDeliveryDashboard() {
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-xs md:text-sm font-medium text-gray-900 truncate">{delivery.restaurant}</p>
-                        <p className="text-[10px] md:text-xs text-gray-500 truncate">{delivery.restaurantAddress.split(',')[0]}</p>
+                        <p className="text-[10px] md:text-xs text-gray-500 truncate">{getShortAddress(delivery.restaurantAddress)}</p>
                       </div>
                     </div>
 
@@ -582,10 +752,18 @@ export default function EnhancedDeliveryDashboard() {
                   {/* Action Buttons */}
                   <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-3 border-t border-gray-100">
                     <div className="flex items-center gap-2">
-                      <button className="p-2 hover:bg-blue-50 rounded-lg transition-colors border border-gray-200">
+                      <button
+                        onClick={() => callCustomer(delivery.phone)}
+                        className="p-2 hover:bg-blue-50 rounded-lg transition-colors border border-gray-200"
+                        title="Call customer"
+                      >
                         <Phone className="w-4 h-4 text-gray-500" />
                       </button>
-                      <button className="p-2 hover:bg-green-50 rounded-lg transition-colors border border-gray-200">
+                      <button
+                        onClick={() => openNavigation(delivery.address)}
+                        className="p-2 hover:bg-green-50 rounded-lg transition-colors border border-gray-200"
+                        title="Navigate to customer"
+                      >
                         <Navigation className="w-4 h-4 text-gray-500" />
                       </button>
                       <button className="p-2 hover:bg-purple-50 rounded-lg transition-colors border border-gray-200">
@@ -594,33 +772,49 @@ export default function EnhancedDeliveryDashboard() {
                     </div>
                     
                     <div className="flex items-center gap-2">
-                      {delivery.status === "assigned" && (
-                        <>
-                          <button className="flex-1 sm:flex-none px-4 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100 rounded-lg border border-gray-200">
-                            Decline
-                          </button>
-                          <button className="flex-1 sm:flex-none px-6 py-2 bg-gradient-to-r from-blue-600 to-blue-500 text-white rounded-lg text-xs font-medium hover:shadow-lg flex items-center justify-center gap-1">
-                            <Package className="w-4 h-4" />
-                            <span>Accept</span>
-                          </button>
-                        </>
-                      )}
-                      {delivery.status === "picked_up" && (
-                        <button className="w-full sm:w-auto px-6 py-2 bg-gradient-to-r from-green-600 to-green-500 text-white rounded-lg text-xs font-medium hover:shadow-lg flex items-center justify-center gap-1">
-                          <CheckCircle className="w-4 h-4" />
-                          <span>Confirm Delivery</span>
+                      {normalizeDeliveryStatus(delivery.status) === "assigned" && (
+                        <button
+                          onClick={() => updateDeliveryStep(delivery, "pick")}
+                          disabled={updatingDeliveryId === delivery.id}
+                          className="flex-1 sm:flex-none px-6 py-2 bg-gradient-to-r from-blue-600 to-blue-500 text-white rounded-lg text-xs font-medium hover:shadow-lg flex items-center justify-center gap-1 disabled:opacity-60"
+                        >
+                          <Package className="w-4 h-4" />
+                          <span>{updatingDeliveryId === delivery.id ? "Updating..." : "Picked Up"}</span>
                         </button>
                       )}
-                      {delivery.status === "waiting" && (
-                        <button className="w-full sm:w-auto px-6 py-2 bg-gradient-to-r from-orange-600 to-orange-500 text-white rounded-lg text-xs font-medium hover:shadow-lg flex items-center justify-center gap-1">
+                      {normalizeDeliveryStatus(delivery.status) === "picked" && (
+                        <button
+                          onClick={() => updateDeliveryStep(delivery, "start")}
+                          disabled={updatingDeliveryId === delivery.id}
+                          className="w-full sm:w-auto px-6 py-2 bg-gradient-to-r from-green-600 to-green-500 text-white rounded-lg text-xs font-medium hover:shadow-lg flex items-center justify-center gap-1 disabled:opacity-60"
+                        >
                           <Navigation className="w-4 h-4" />
-                          <span>Start Delivery</span>
+                          <span>{updatingDeliveryId === delivery.id ? "Updating..." : "Start Delivery"}</span>
+                        </button>
+                      )}
+                      {normalizeDeliveryStatus(delivery.status) === "on_the_way" && (
+                        <button
+                          onClick={() => updateDeliveryStep(delivery, "complete")}
+                          disabled={updatingDeliveryId === delivery.id}
+                          className="w-full sm:w-auto px-6 py-2 bg-gradient-to-r from-emerald-600 to-emerald-500 text-white rounded-lg text-xs font-medium hover:shadow-lg flex items-center justify-center gap-1 disabled:opacity-60"
+                        >
+                          <CheckCircle className="w-4 h-4" />
+                          <span>{updatingDeliveryId === delivery.id ? "Updating..." : "Mark Delivered"}</span>
                         </button>
                       )}
                     </div>
                   </div>
                 </div>
               ))}
+              {!isLoadingDashboard && filteredActiveDeliveries.length === 0 && (
+                <div className="p-8 text-center">
+                  <Package className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+                  <h3 className="text-sm font-semibold text-gray-800">No active deliveries</h3>
+                  <p className="text-xs text-gray-500 mt-1">
+                    New assignments will appear here when you are online.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -634,11 +828,11 @@ export default function EnhancedDeliveryDashboard() {
               <div className="space-y-2 md:space-y-3">
                 <div className="flex justify-between items-center text-xs md:text-sm">
                   <span className="text-gray-600">Distance</span>
-                  <span className="font-medium bg-gray-100 px-3 py-1 rounded-full">24.5 km</span>
+                  <span className="font-medium bg-gray-100 px-3 py-1 rounded-full">{displayActiveDeliveries.length} active</span>
                 </div>
                 <div className="flex justify-between items-center text-xs md:text-sm">
                   <span className="text-gray-600">Time</span>
-                  <span className="font-medium bg-gray-100 px-3 py-1 rounded-full">3h 45m</span>
+                  <span className="font-medium bg-gray-100 px-3 py-1 rounded-full">{liveStats?.onlineHours || 0}h</span>
                 </div>
                 <div className="flex justify-between items-center text-xs md:text-sm">
                   <span className="text-gray-600">Fuel</span>
@@ -709,7 +903,7 @@ export default function EnhancedDeliveryDashboard() {
             <div className="h-32 md:h-40 bg-gradient-to-r from-gray-100 to-gray-200 rounded-lg flex items-center justify-center">
               <div className="text-center">
                 <Navigation className="w-6 h-6 md:w-8 md:h-8 text-blue-500 mx-auto mb-1" />
-                <p className="text-xs md:text-sm text-gray-600">3 active deliveries in your area</p>
+                <p className="text-xs md:text-sm text-gray-600">{displayActiveDeliveries.length} active deliveries in your area</p>
               </div>
             </div>
           </div>

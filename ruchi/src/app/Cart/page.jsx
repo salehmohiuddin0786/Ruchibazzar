@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
+import { getMediaUrl, hideBrokenImage } from "../utils/media";
 
 const CartPage = () => {
   const router = useRouter();
@@ -644,11 +645,10 @@ const CartPage = () => {
                             <div className="w-full xs:w-20 h-20 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
                               {item.dish?.image ? (
                                 <img
-                                  src={`${apiUrl.replace("/api", "")}/uploads/${
-                                    item.dish.image
-                                  }`}
+                                  src={getMediaUrl(item.dish.image, apiUrl)}
                                   alt={item.dish?.name || "Dish"}
                                   className="w-full h-full object-cover"
+                                  onError={hideBrokenImage}
                                 />
                               ) : (
                                 <div className="w-full h-full bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center">

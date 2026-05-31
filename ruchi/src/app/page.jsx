@@ -8,6 +8,7 @@ import WhyChooseUs from './components/WhyChooseUs';
 import PopularRestaurants from './components/PopularRestaurants';
 import AchievementsSection from './components/AchievementsSection';
 import SpecialOffer from './components/SpecialOffer';
+import { getMediaUrl, hideBrokenImage } from './utils/media';
 import { 
   Search, Star, Clock, Shield, Truck, ArrowRight, ShoppingBag, Utensils, 
   TrendingUp, Users, Award, Sparkles, Heart, Zap, ChevronRight, 
@@ -246,7 +247,7 @@ const Page = () => {
               name: dish.name,
               price: dish.price,
               quantity: item.quantity,
-              image: dish.image,
+              image: getMediaUrl(dish.image, apiUrl),
               restaurantId: dish.restaurantId
             };
           }
@@ -445,12 +446,12 @@ const Page = () => {
       const data = await response.json();
       
       // Transform dishes data
-      const transformedDishes = data.data.map((dish, index) => ({
+      const transformedDishes = normalizeListResponse(data, "dishes").map((dish, index) => ({
         id: dish.id,
         name: dish.name,
         description: dish.description || 'Delicious dish prepared with fresh ingredients',
         price: dish.price,
-        image: dish.image ? `${apiUrl.replace('/api', '')}/uploads/${dish.image}` : null,
+        image: getMediaUrl(dish.image, apiUrl),
         restaurant: dish.Restaurant?.name || 'Various Restaurant',
         rating: dish.rating || (4.0 + Math.random() * 0.9).toFixed(1),
         deliveryTime: '20-30 min',
@@ -489,8 +490,9 @@ const Page = () => {
         deliveryTime: restaurant.deliveryTime || '25-35 min',
         deliveryFee: restaurant.deliveryFee ? `${currencySymbol}${restaurant.deliveryFee}` : 'Free',
         minOrder: restaurant.minOrder ? `${currencySymbol}${restaurant.minOrder}` : `${currencySymbol}99`,
-        image: restaurant.image ? `${apiUrl.replace('/api', '')}/uploads/${restaurant.image}` : null,
+        image: getMediaUrl(restaurant.coverImage || restaurant.logo || restaurant.image, apiUrl),
         priceRange: restaurant.priceRange || '₹₹',
+        priceRange: restaurant.priceRange || `${currencySymbol}${currencySymbol}`,
         isOpen: restaurant.isOpen !== undefined ? restaurant.isOpen : true,
         featured: index < 2,
         offers: restaurant.offers || ['50% OFF', 'Free Delivery'],
@@ -1024,11 +1026,12 @@ const Page = () => {
                     className="bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-xl transition-all cursor-pointer group"
                   >
                     <div className="relative h-40">
-                      {restaurant.image ? (
+                      {getMediaUrl(restaurant.coverImage || restaurant.logo || restaurant.image, apiUrl) ? (
                         <img
-                          src={restaurant.image}
+                          src={getMediaUrl(restaurant.coverImage || restaurant.logo || restaurant.image, apiUrl)}
                           alt={restaurant.name}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                          onError={hideBrokenImage}
                         />
                       ) : (
                         <div className="w-full h-full bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center">
@@ -1140,6 +1143,7 @@ const Page = () => {
                           src={dish.image}
                           alt={dish.name}
                           className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+                          onError={hideBrokenImage}
                         />
                       ) : (
                         <div className={`w-full h-full bg-gradient-to-br ${
@@ -1367,6 +1371,7 @@ const Page = () => {
                           src={restaurant.image}
                           alt={restaurant.name}
                           className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+                          onError={hideBrokenImage}
                         />
                       ) : (
                         <div className="w-full h-full bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center">

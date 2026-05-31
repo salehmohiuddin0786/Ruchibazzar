@@ -31,7 +31,9 @@ import {
   Wallet,
   Home,
   Copy,
-  CheckCheck
+  CheckCheck,
+  Navigation,
+  ExternalLink
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -57,6 +59,28 @@ const Page = () => {
   const [userRole, setUserRole] = useState(null);
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+  const socketUrl = apiUrl.replace(/\/api\/?$/, '');
+
+  const ensureSocketIo = () =>
+    new Promise((resolve, reject) => {
+      if (typeof window === 'undefined') return reject(new Error('Socket is not available'));
+      if (window.io) return resolve(window.io);
+
+      const existingScript = document.querySelector('script[data-ruchi-socket]');
+      if (existingScript) {
+        existingScript.addEventListener('load', () => resolve(window.io), { once: true });
+        existingScript.addEventListener('error', reject, { once: true });
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.src = `${socketUrl}/socket.io/socket.io.js`;
+      script.async = true;
+      script.dataset.ruchiSocket = 'true';
+      script.onload = () => resolve(window.io);
+      script.onerror = () => reject(new Error('Unable to load live tracking'));
+      document.body.appendChild(script);
+    });
 
   // Check if desktop view
   useEffect(() => {
@@ -110,8 +134,8 @@ const Page = () => {
   };
 
   // Fetch orders from backend - FIXED for your backend structure
-  const fetchOrders = async () => {
-    setLoading(true);
+  const fetchOrders = async (silent = false) => {
+    if (!silent) setLoading(true);
     setError(null);
 
     try {
@@ -119,7 +143,7 @@ const Page = () => {
       
       if (!token) {
         setError('Please log in to view your orders');
-        setLoading(false);
+        if (!silent) setLoading(false);
         return;
       }
 
@@ -140,13 +164,13 @@ const Page = () => {
         localStorage.removeItem('token');
         localStorage.removeItem('user');
         setError('Your session has expired. Please log in again.');
-        setLoading(false);
+        if (!silent) setLoading(false);
         return;
       }
       
       if (res.status === 403) {
         setError(data.message || 'You do not have permission to view orders. Only customers can view orders.');
-        setLoading(false);
+        if (!silent) setLoading(false);
         return;
       }
       
@@ -163,7 +187,7 @@ const Page = () => {
       } else {
         console.error("Unexpected data structure:", data);
         setOrders({ active: [], past: [] });
-        setLoading(false);
+        if (!silent) setLoading(false);
         return;
       }
 
@@ -177,8 +201,8 @@ const Page = () => {
       ordersArray.forEach(order => {
         const orderStatus = order.status?.toLowerCase();
         
-        if (['pending', 'confirmed', 'preparing', 'out_for_delivery'].includes(orderStatus)) {
-          activeOrdersList.push(transformOrderData(order));
+      if (['pending', 'confirmed', 'preparing', 'ready', 'out_for_delivery', 'picked_up', 'on the way'].includes(orderStatus)) {
+        activeOrdersList.push(transformOrderData(order));
         } else if (['delivered', 'cancelled', 'rejected'].includes(orderStatus)) {
           pastOrdersList.push(transformOrderData(order));
         } else {
@@ -198,7 +222,7 @@ const Page = () => {
       console.error('Error fetching orders:', err);
       setError(err.message || 'Failed to load orders. Please try again.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -277,6 +301,13 @@ const Page = () => {
       time: getOrderTime(order.createdAt),
       estimatedDelivery: getEstimatedDelivery(order.createdAt),
       driver: order.driver || null,
+      deliveryPartnerId: order.deliveryPartnerId || null,
+      deliveryPartnerName: order.deliveryPartnerName || order.driver?.name || null,
+      deliveryPartnerPhone: order.driver?.phone || order.deliveryPartnerPhone || null,
+      deliveryLat: order.deliveryLat || order.deliveryLatitude || null,
+      deliveryLng: order.deliveryLng || order.deliveryLongitude || null,
+      deliveryStatus: order.deliveryStatus || null,
+      liveTrackingAt: order.liveTrackingAt || null,
       rating: order.rating || 0,
       review: order.review || '',
       orderStatus: order.status,
@@ -295,7 +326,10 @@ const Page = () => {
       case 'pending': return 'pending';
       case 'confirmed': return 'confirmed';
       case 'preparing': return 'preparing';
+      case 'ready': return 'preparing';
       case 'out_for_delivery': return 'on_the_way';
+      case 'picked_up': return 'on_the_way';
+      case 'on the way': return 'on_the_way';
       case 'delivered': return 'delivered';
       case 'cancelled': return 'cancelled';
       case 'rejected': return 'cancelled';
@@ -308,7 +342,10 @@ const Page = () => {
       case 'pending': return 'Order placed';
       case 'confirmed': return 'Order confirmed';
       case 'preparing': return 'Preparing your order';
+      case 'ready': return 'Order is ready';
       case 'out_for_delivery': return 'Out for delivery';
+      case 'picked_up': return 'Picked up by partner';
+      case 'on the way': return 'Out for delivery';
       case 'delivered': return 'Delivered';
       case 'cancelled': return 'Cancelled';
       case 'rejected': return 'Rejected';
@@ -382,6 +419,61 @@ const Page = () => {
     }
   }, [isLoggedIn]);
 
+  useEffect(() => {
+    if (!isLoggedIn) return undefined;
+
+    const userData = getUserData();
+    if (!userData?.id) return undefined;
+
+    let socket;
+    let cancelled = false;
+
+    const updateOrderLocation = (payload) => {
+      setOrders((previous) => {
+        const updateList = (list) =>
+          list.map((order) =>
+            Number(order.orderId) === Number(payload.orderId)
+              ? {
+                  ...order,
+                  deliveryLat: payload.deliveryLat,
+                  deliveryLng: payload.deliveryLng,
+                  deliveryStatus: payload.deliveryStatus || order.deliveryStatus,
+                  orderStatus: payload.status || order.orderStatus,
+                  status: getOrderStatus(payload.status || order.orderStatus),
+                  statusText: getStatusText(payload.status || order.orderStatus),
+                  liveTrackingAt: payload.updatedAt || new Date().toISOString(),
+                }
+              : order
+          );
+
+        return {
+          active: updateList(previous.active),
+          past: updateList(previous.past),
+        };
+      });
+    };
+
+    ensureSocketIo()
+      .then((io) => {
+        if (cancelled || !io) return;
+        socket = io(socketUrl, { transports: ['websocket', 'polling'] });
+        socket.emit('joinUserRoom', userData.id);
+        socket.on('deliveryLocationUpdated', updateOrderLocation);
+        socket.on('deliveryAssigned', () => fetchOrders(true));
+        socket.on('orderStatusUpdated', () => fetchOrders(true));
+        socket.on('orderPlaced', () => fetchOrders(true));
+      })
+      .catch((err) => console.error('Live tracking socket error:', err));
+
+    const fallbackPoll = setInterval(() => fetchOrders(true), 20000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(fallbackPoll);
+      if (socket) socket.disconnect();
+    };
+  }, [isLoggedIn]);
+
   const handleLoginRedirect = () => {
     router.push('/login?redirect=orders');
   };
@@ -391,7 +483,12 @@ const Page = () => {
   };
 
   const handleTrackOrder = (order) => {
-    router.push(`/track-order/${order.orderId}`);
+    if (order.liveTrackingAt && order.deliveryLat && order.deliveryLng) {
+      window.open(`https://www.google.com/maps?q=${order.deliveryLat},${order.deliveryLng}`, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    setExpandedOrder(order.id);
   };
 
   const handleCallDriver = (phone) => {
@@ -400,6 +497,58 @@ const Page = () => {
 
   const handleMessageDriver = (phone) => {
     window.location.href = `sms:${phone}`;
+  };
+
+  const renderLiveTracking = (order) => {
+    if (activeTab !== 'active') return null;
+
+    const hasPartner = order.deliveryPartnerName || order.deliveryPartnerId || order.driver;
+    const hasLocation = order.liveTrackingAt && order.deliveryLat && order.deliveryLng;
+    const lastUpdated = order.liveTrackingAt
+      ? new Date(order.liveTrackingAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+      : null;
+
+    if (!hasPartner && !hasLocation && order.status !== 'on_the_way') return null;
+
+    return (
+      <div className="mb-6 rounded-2xl border border-blue-100 bg-gradient-to-r from-blue-50 to-cyan-50 p-4">
+        <div className="flex items-start gap-3">
+          <div className="w-11 h-11 rounded-xl bg-blue-600 text-white flex items-center justify-center flex-shrink-0">
+            <Navigation className="w-5 h-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold uppercase text-blue-700">Live Tracking</p>
+            <h4 className="font-bold text-gray-900 mt-1">
+              {order.deliveryPartnerName || order.driver?.name || 'Delivery partner assigned'}
+            </h4>
+            <p className="text-sm text-gray-600 mt-1">
+              {hasLocation
+                ? `Current location: ${Number(order.deliveryLat).toFixed(5)}, ${Number(order.deliveryLng).toFixed(5)}`
+                : 'Waiting for partner live location'}
+            </p>
+            {lastUpdated && <p className="text-xs text-blue-700 mt-1">Updated at {lastUpdated}</p>}
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
+          <button
+            onClick={() => handleTrackOrder(order)}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700 transition-colors disabled:opacity-60"
+            disabled={!hasLocation}
+          >
+            <ExternalLink className="w-4 h-4" />
+            Open Live Map
+          </button>
+          <button
+            onClick={() => handleCallDriver(order.deliveryPartnerPhone || order.driver?.phone)}
+            disabled={!(order.deliveryPartnerPhone || order.driver?.phone)}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-blue-200 bg-white px-4 py-3 text-sm font-semibold text-blue-700 hover:bg-blue-50 transition-colors disabled:opacity-60"
+          >
+            <Phone className="w-4 h-4" />
+            Call Partner
+          </button>
+        </div>
+      </div>
+    );
   };
 
   const toggleOrderExpand = (orderId) => {
@@ -705,7 +854,7 @@ const Page = () => {
 
                       <div className="flex items-center justify-between mt-4">
                         <div>
-                          <span className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-orange-600 to-orange-400 bg-clip-text text-transparent">
+                            <span className="text-2xl sm:text-3xl font-bold text-orange-600">
                             {order.total}
                           </span>
                           <p className="text-xs text-gray-500 mt-1">Total amount</p>
@@ -747,6 +896,8 @@ const Page = () => {
                             ))}
                           </div>
                         </div>
+
+                        {renderLiveTracking(order)}
 
                         {/* Price Details */}
                         <div className="mb-6 p-4 bg-gray-50 rounded-xl">
@@ -825,6 +976,8 @@ const Page = () => {
                           </div>
                         ))}
                       </div>
+
+                      {renderLiveTracking(order)}
 
                       <div className="mb-6 p-4 bg-gray-50 rounded-xl">
                         <h4 className="font-semibold text-gray-900 mb-3">Price Details</h4>

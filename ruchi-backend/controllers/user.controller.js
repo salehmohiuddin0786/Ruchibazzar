@@ -1,4 +1,31 @@
-const { User, Restaurant } = require("../models");
+const { User, Restaurant, UserAddress } = require("../models");
+
+const normalizeAddressPayload = (body, userId) => ({
+  userId,
+  type: body.type || "home",
+  street: body.street || body.streetAddress || body.finalAddress || body.address || "",
+  city: body.city || body.cityName || "",
+  state: body.state || body.stateName || "",
+  zipCode: body.zipCode || body.pincode || "",
+  landmark: body.landmark || body.colonyName || "",
+  phone: body.phone || body.contactNumber || "",
+  contactName: body.contactName || "",
+  latitude: body.latitude === "" || body.latitude === undefined ? null : body.latitude,
+  longitude: body.longitude === "" || body.longitude === undefined ? null : body.longitude,
+  isDefault: Boolean(body.isDefault),
+});
+
+const formatUser = (user) => ({
+  id: user.id,
+  name: user.name,
+  email: user.email,
+  phone: user.phone,
+  role: user.role,
+  isVerified: user.isVerified,
+  authProvider: user.authProvider,
+  isActive: user.isActive,
+  createdAt: user.createdAt,
+});
 
 /*
 |--------------------------------------------------------------------------
@@ -69,7 +96,7 @@ exports.getProfile = async (req, res) => {
 */
 exports.updateProfile = async (req, res) => {
   try {
-    const { name, email } = req.body;
+    const { name, email, phone } = req.body;
 
     const user = await User.findByPk(req.user.id);
 
@@ -91,14 +118,25 @@ exports.updateProfile = async (req, res) => {
     }
 
     // ✅ Update fields safely
+    if (phone && phone !== user.phone) {
+      const exists = await User.findOne({ where: { phone } });
+
+      if (exists) {
+        return res.status(400).json({
+          message: "Phone already in use",
+        });
+      }
+    }
+
     if (name) user.name = name;
     if (email) user.email = email;
+    if (phone) user.phone = phone;
 
     await user.save();
 
     res.json({
       message: "Profile updated successfully",
-      user,
+      user: formatUser(user),
     });
 
   } catch (error) {
@@ -106,6 +144,104 @@ exports.updateProfile = async (req, res) => {
     res.status(500).json({
       message: "Failed to update profile",
     });
+  }
+};
+
+exports.getAddresses = async (req, res) => {
+  try {
+    const addresses = await UserAddress.findAll({
+      where: { userId: req.user.id },
+      order: [
+        ["isDefault", "DESC"],
+        ["updatedAt", "DESC"],
+      ],
+    });
+
+    return res.json({ success: true, addresses });
+  } catch (error) {
+    console.error("Get Addresses Error:", error);
+    return res.status(500).json({ message: "Failed to fetch addresses" });
+  }
+};
+
+exports.addAddress = async (req, res) => {
+  try {
+    const payload = normalizeAddressPayload(req.body, req.user.id);
+
+    if (!payload.street) {
+      return res.status(400).json({ message: "Address is required" });
+    }
+
+    const count = await UserAddress.count({ where: { userId: req.user.id } });
+    if (payload.isDefault || count === 0) {
+      await UserAddress.update({ isDefault: false }, { where: { userId: req.user.id } });
+      payload.isDefault = true;
+    }
+
+    const address = await UserAddress.create(payload);
+    return res.status(201).json({ success: true, address });
+  } catch (error) {
+    console.error("Add Address Error:", error);
+    return res.status(500).json({ message: "Failed to add address" });
+  }
+};
+
+exports.updateAddress = async (req, res) => {
+  try {
+    const address = await UserAddress.findOne({
+      where: { id: req.params.id, userId: req.user.id },
+    });
+
+    if (!address) return res.status(404).json({ message: "Address not found" });
+
+    const payload = normalizeAddressPayload(req.body, req.user.id);
+    if (!payload.street) {
+      return res.status(400).json({ message: "Address is required" });
+    }
+
+    if (payload.isDefault) {
+      await UserAddress.update({ isDefault: false }, { where: { userId: req.user.id } });
+    }
+
+    await address.update(payload);
+    return res.json({ success: true, address });
+  } catch (error) {
+    console.error("Update Address Error:", error);
+    return res.status(500).json({ message: "Failed to update address" });
+  }
+};
+
+exports.deleteAddress = async (req, res) => {
+  try {
+    const address = await UserAddress.findOne({
+      where: { id: req.params.id, userId: req.user.id },
+    });
+
+    if (!address) return res.status(404).json({ message: "Address not found" });
+
+    await address.destroy();
+    return res.json({ success: true });
+  } catch (error) {
+    console.error("Delete Address Error:", error);
+    return res.status(500).json({ message: "Failed to delete address" });
+  }
+};
+
+exports.setDefaultAddress = async (req, res) => {
+  try {
+    const address = await UserAddress.findOne({
+      where: { id: req.params.id, userId: req.user.id },
+    });
+
+    if (!address) return res.status(404).json({ message: "Address not found" });
+
+    await UserAddress.update({ isDefault: false }, { where: { userId: req.user.id } });
+    await address.update({ isDefault: true });
+
+    return res.json({ success: true, address });
+  } catch (error) {
+    console.error("Default Address Error:", error);
+    return res.status(500).json({ message: "Failed to set default address" });
   }
 };
 

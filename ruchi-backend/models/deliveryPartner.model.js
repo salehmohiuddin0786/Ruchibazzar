@@ -154,9 +154,33 @@ module.exports = (sequelize) => {
       },
 
       // Status
+      role: {
+        type: DataTypes.ENUM("delivery", "partner"),
+        defaultValue: "delivery",
+      },
       isAvailable: {
         type: DataTypes.BOOLEAN,
         defaultValue: true,
+      },
+      isActive: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: true,
+      },
+      currentLat: {
+        type: DataTypes.FLOAT,
+        allowNull: true,
+      },
+      currentLng: {
+        type: DataTypes.FLOAT,
+        allowNull: true,
+      },
+      rating: {
+        type: DataTypes.FLOAT,
+        defaultValue: 5,
+      },
+      totalDeliveries: {
+        type: DataTypes.INTEGER,
+        defaultValue: 0,
       },
       isVerified: {
         type: DataTypes.BOOLEAN,

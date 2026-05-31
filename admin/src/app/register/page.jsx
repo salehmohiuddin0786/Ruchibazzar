@@ -18,13 +18,26 @@ import {
   AlertCircle,
   ArrowRight,
   ArrowLeft,
+  Chrome,
 } from "lucide-react";
-import { RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
+import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 import { auth } from "../firebase";
 
 const AUTH_BASE_API = "http://localhost:5000/api/auth";
 const AUTH_API = `${AUTH_BASE_API}/register`;
 const RESTAURANT_API = "http://localhost:5000/api/restaurants";
+
+const parseApiResponse = async (response) => {
+  const text = await response.text();
+
+  if (!text) return {};
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { message: text };
+  }
+};
 
 const cuisineOptions = [
   "North Indian",
@@ -91,14 +104,12 @@ const PartnerRegister = () => {
   const router = useRouter();
 
   const [step, setStep] = useState(1);
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpVerified, setOtpVerified] = useState(false);
-  const [confirmationResult, setConfirmationResult] = useState(null);
-  const [firebaseIdToken, setFirebaseIdToken] = useState("");
 
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [firebaseIdToken, setFirebaseIdToken] = useState("");
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
@@ -150,7 +161,6 @@ const PartnerRegister = () => {
     popularDishes: "",
     referralCode: "",
     agreeTerms: false,
-    otp: "",
   });
 
   const handleChange = (e) => {
@@ -172,13 +182,6 @@ const PartnerRegister = () => {
       return;
     }
 
-    if (name === "ownerPhone") {
-      setOtpSent(false);
-      setOtpVerified(false);
-      setConfirmationResult(null);
-      setFirebaseIdToken("");
-    }
-
     setFormData((prev) => ({
       ...prev,
       [name]: type === "checkbox" ? checked : value,
@@ -194,78 +197,30 @@ const PartnerRegister = () => {
     }));
   };
 
-  const getRecaptchaVerifier = () => {
-    if (!window.partnerRecaptchaVerifier) {
-      window.partnerRecaptchaVerifier = new RecaptchaVerifier(
-        auth,
-        "partner-recaptcha-container",
-        { size: "invisible" }
-      );
-    }
-
-    return window.partnerRecaptchaVerifier;
-  };
-
-  const sendOtp = async () => {
+  const handleGoogleSignup = async () => {
     setError("");
 
-    if (!/^[6-9]\d{9}$/.test(formData.ownerPhone)) {
-      setError("Enter valid 10 digit Indian mobile number");
-      return;
-    }
-
     try {
-      setIsLoading(true);
+      setIsGoogleLoading(true);
 
-      const appVerifier = getRecaptchaVerifier();
-      const result = await signInWithPhoneNumber(
-        auth,
-        `+91${formData.ownerPhone}`,
-        appVerifier
-      );
-
-      setConfirmationResult(result);
-      setOtpSent(true);
-    } catch (err) {
-      console.error("Firebase OTP Error:", err);
-      setError(err.message || "OTP sending failed. Please try again.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const verifyOtp = async () => {
-    setError("");
-
-    if (!otpSent) {
-      setError("Please send OTP first");
-      return;
-    }
-
-    if (!/^\d{4,8}$/.test(formData.otp)) {
-      setError("Enter valid OTP");
-      return;
-    }
-
-    try {
-      setIsLoading(true);
-
-      if (!confirmationResult) {
-        throw new Error("Session expired. Please send OTP again");
-      }
-
-      const firebaseResult = await confirmationResult.confirm(formData.otp);
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: "select_account" });
+      const firebaseResult = await signInWithPopup(auth, provider);
       const verifiedIdToken = await firebaseResult.user.getIdToken();
+      const googleUser = firebaseResult.user;
 
       setFirebaseIdToken(verifiedIdToken);
-      setOtpVerified(true);
-      setOtpSent(false);
-      setConfirmationResult(null);
+      setFormData((prev) => ({
+        ...prev,
+        ownerName: prev.ownerName || googleUser.displayName || "",
+        ownerEmail: googleUser.email || prev.ownerEmail,
+        restaurantEmail: prev.restaurantEmail || googleUser.email || "",
+      }));
     } catch (err) {
-      console.error("Firebase OTP verification error:", err);
-      setError(err.message || "Invalid OTP");
+      console.error("Google signup error:", err);
+      setError(err.message || "Google signup failed");
     } finally {
-      setIsLoading(false);
+      setIsGoogleLoading(false);
     }
   };
 
@@ -292,7 +247,7 @@ const PartnerRegister = () => {
       if (!formData.restaurantName.trim()) return setError("Restaurant name required");
       if (!formData.ownerName.trim()) return setError("Owner name required");
       if (!formData.ownerPhone.trim()) return setError("Owner phone required");
-      if (!otpVerified) return setError("Please verify owner mobile number");
+      if (!/^[6-9]\d{9}$/.test(formData.ownerPhone)) return setError("Enter valid 10 digit Indian mobile number");
       if (!formData.ownerEmail.trim()) return setError("Owner email required");
       if (!formData.address.trim()) return setError("Address required");
       if (!formData.pincode.trim()) return setError("Pincode required");
@@ -318,9 +273,9 @@ const PartnerRegister = () => {
     }
 
     if (step === 6) {
-      if (!formData.password) return setError("Password required");
-      if (formData.password.length < 6) return setError("Password minimum 6 characters");
-      if (formData.password !== formData.confirmPassword) return setError("Passwords do not match");
+      if (!firebaseIdToken && !formData.password) return setError("Password required");
+      if (!firebaseIdToken && formData.password.length < 6) return setError("Password minimum 6 characters");
+      if (!firebaseIdToken && formData.password !== formData.confirmPassword) return setError("Passwords do not match");
       if (!formData.agreeTerms) return setError("Please accept terms");
     }
 
@@ -366,7 +321,7 @@ const PartnerRegister = () => {
         }),
       });
 
-      const registerData = await registerResponse.json();
+      const registerData = await parseApiResponse(registerResponse);
 
       if (!registerResponse.ok) {
         throw new Error(registerData.message || "Partner registration failed");
@@ -383,7 +338,7 @@ const PartnerRegister = () => {
 
       const restaurantData = new FormData();
 
-      const skipKeys = ["password", "confirmPassword", "otp", "agreeTerms"];
+      const skipKeys = ["password", "confirmPassword", "agreeTerms"];
 
       Object.entries(formData).forEach(([key, value]) => {
         if (skipKeys.includes(key)) return;
@@ -397,8 +352,6 @@ const PartnerRegister = () => {
         }
       });
 
-      restaurantData.append("isPhoneVerified", "true");
-
       const restaurantResponse = await fetch(RESTAURANT_API, {
         method: "POST",
         headers: {
@@ -407,7 +360,7 @@ const PartnerRegister = () => {
         body: restaurantData,
       });
 
-      const restaurantResult = await restaurantResponse.json();
+      const restaurantResult = await parseApiResponse(restaurantResponse);
 
       if (!restaurantResponse.ok) {
         throw new Error(restaurantResult.message || "Restaurant creation failed");
@@ -460,6 +413,28 @@ const PartnerRegister = () => {
             <p className="text-gray-500 mt-1">Step {step} of 6</p>
           </div>
 
+          <div className="mb-6 flex justify-center">
+            <button
+              type="button"
+              onClick={handleGoogleSignup}
+              disabled={isLoading || isGoogleLoading}
+              className={`inline-flex items-center gap-2 px-4 py-3 rounded-xl border font-semibold transition ${
+                firebaseIdToken
+                  ? "bg-green-50 text-green-700 border-green-200"
+                  : "bg-white text-black border-gray-300 hover:bg-gray-50"
+              } disabled:opacity-60`}
+            >
+              {isGoogleLoading ? (
+                "Connecting..."
+              ) : (
+                <>
+                  {firebaseIdToken ? <CheckCircle size={18} /> : <Chrome size={18} />}
+                  {firebaseIdToken ? "Google account connected" : "Sign up with Google"}
+                </>
+              )}
+            </button>
+          </div>
+
           <div className="w-full bg-gray-200 rounded-full h-2 mb-6">
             <div
               className="bg-red-600 h-2 rounded-full transition-all"
@@ -479,54 +454,7 @@ const PartnerRegister = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <InputField label="Restaurant / Hotel Name *" name="restaurantName" value={formData.restaurantName} onChange={handleChange} icon={Store} />
                 <InputField label="Owner Name *" name="ownerName" value={formData.ownerName} onChange={handleChange} icon={User} />
-
-                <div>
-                  <label className="block text-sm font-medium text-black mb-1">
-                    Owner Phone Number *
-                  </label>
-                  <div className="flex gap-2">
-                    <div className="relative flex-1">
-                      <Phone className="absolute left-3 top-3.5 h-5 w-5 text-gray-400" />
-                      <input
-                        type="tel"
-                        name="ownerPhone"
-                        value={formData.ownerPhone}
-                        onChange={handleChange}
-                        disabled={otpVerified}
-                        placeholder="9876543210"
-                        maxLength={10}
-                        className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-red-600 focus:ring-2 focus:ring-red-100 outline-none text-black disabled:bg-gray-100"
-                      />
-                    </div>
-
-                    {!otpVerified ? (
-                      <button type="button" onClick={sendOtp} disabled={isLoading} className="px-4 py-2 bg-red-600 text-white rounded-xl disabled:opacity-60">
-                        {otpSent ? "Resend" : "Verify"}
-                      </button>
-                    ) : (
-                      <span className="px-4 py-3 bg-green-100 text-green-700 rounded-xl text-sm">
-                        Verified
-                      </span>
-                    )}
-                  </div>
-                  {otpSent && !otpVerified && (
-                    <div className="flex gap-2 mt-2">
-                      <input
-                        type="text"
-                        name="otp"
-                        value={formData.otp}
-                        onChange={handleChange}
-                        placeholder="Enter OTP"
-                        maxLength={8}
-                        className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-red-600 focus:ring-2 focus:ring-red-100 outline-none text-black"
-                      />
-                      <button type="button" onClick={verifyOtp} disabled={isLoading} className="px-4 py-2 bg-black text-white rounded-xl disabled:opacity-60">
-                        Confirm
-                      </button>
-                    </div>
-                  )}
-                  <div id="partner-recaptcha-container" />
-                </div>
+                <InputField label="Owner Phone Number *" name="ownerPhone" type="tel" value={formData.ownerPhone} onChange={handleChange} placeholder="9876543210" icon={Phone} />
 
                 <InputField label="Owner Email ID *" name="ownerEmail" type="email" value={formData.ownerEmail} onChange={handleChange} icon={Mail} />
                 <InputField label="Restaurant Phone Number" name="restaurantPhone" value={formData.restaurantPhone} onChange={handleChange} icon={Phone} />
@@ -665,27 +593,35 @@ const PartnerRegister = () => {
                 <InputField label="Popular Dishes" name="popularDishes" value={formData.popularDishes} onChange={handleChange} />
                 <InputField label="Referral Code" name="referralCode" value={formData.referralCode} onChange={handleChange} />
 
-                <div>
-                  <label className="block text-sm font-medium text-black mb-1">Password *</label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-3.5 h-5 w-5 text-gray-400" />
-                    <input type={showPassword ? "text" : "password"} name="password" value={formData.password} onChange={handleChange} className="w-full pl-10 pr-12 py-3 border-2 border-gray-200 rounded-xl focus:border-red-600 outline-none text-black" />
-                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-3.5">
-                      {showPassword ? <EyeOff /> : <Eye />}
-                    </button>
-                  </div>
-                </div>
+                {!firebaseIdToken ? (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-black mb-1">Password *</label>
+                      <div className="relative">
+                        <Lock className="absolute left-3 top-3.5 h-5 w-5 text-gray-400" />
+                        <input type={showPassword ? "text" : "password"} name="password" value={formData.password} onChange={handleChange} className="w-full pl-10 pr-12 py-3 border-2 border-gray-200 rounded-xl focus:border-red-600 outline-none text-black" />
+                        <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-3.5">
+                          {showPassword ? <EyeOff /> : <Eye />}
+                        </button>
+                      </div>
+                    </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-black mb-1">Confirm Password *</label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-3.5 h-5 w-5 text-gray-400" />
-                    <input type={showConfirmPassword ? "text" : "password"} name="confirmPassword" value={formData.confirmPassword} onChange={handleChange} className="w-full pl-10 pr-12 py-3 border-2 border-gray-200 rounded-xl focus:border-red-600 outline-none text-black" />
-                    <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3 top-3.5">
-                      {showConfirmPassword ? <EyeOff /> : <Eye />}
-                    </button>
+                    <div>
+                      <label className="block text-sm font-medium text-black mb-1">Confirm Password *</label>
+                      <div className="relative">
+                        <Lock className="absolute left-3 top-3.5 h-5 w-5 text-gray-400" />
+                        <input type={showConfirmPassword ? "text" : "password"} name="confirmPassword" value={formData.confirmPassword} onChange={handleChange} className="w-full pl-10 pr-12 py-3 border-2 border-gray-200 rounded-xl focus:border-red-600 outline-none text-black" />
+                        <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3 top-3.5">
+                          {showConfirmPassword ? <EyeOff /> : <Eye />}
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="md:col-span-2 rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-700">
+                    Your Google account is connected. You can submit without creating a password.
                   </div>
-                </div>
+                )}
 
                 <div className="md:col-span-2 flex gap-2">
                   <input type="checkbox" name="agreeTerms" checked={formData.agreeTerms} onChange={handleChange} />

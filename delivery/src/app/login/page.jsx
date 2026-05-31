@@ -3,23 +3,51 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { Chrome } from "lucide-react";
+import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
+import { auth } from "../firebase";
+
+const parseApiResponse = async (response) => {
+  const text = await response.text();
+
+  if (!text) return {};
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { message: text };
+  }
+};
+
+const saveDeliverySession = (data, rememberMe) => {
+  const maxAge = rememberMe ? 2592000 : 86400;
+
+  localStorage.setItem("deliveryToken", data.token);
+  localStorage.setItem("deliveryUser", JSON.stringify(data.user));
+  if (data.partner) {
+    localStorage.setItem("deliveryPartner", JSON.stringify(data.partner));
+  }
+
+  document.cookie = `deliveryToken=${data.token}; path=/; max-age=${maxAge}; SameSite=Lax`;
+};
 
 export default function DeliveryPartnerLogin() {
   const router = useRouter();
   const [formData, setFormData] = useState({
-    email: "",
+    identifier: "",
     password: "",
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
   // Load saved email if "Remember Me" was checked
   useEffect(() => {
-    const savedEmail = localStorage.getItem("rememberedEmail");
-    if (savedEmail) {
-      setFormData(prev => ({ ...prev, email: savedEmail }));
+    const savedIdentifier = localStorage.getItem("rememberedDeliveryLogin");
+    if (savedIdentifier) {
+      setFormData(prev => ({ ...prev, identifier: savedIdentifier }));
       setRememberMe(true);
     }
   }, []);
@@ -36,35 +64,37 @@ export default function DeliveryPartnerLogin() {
     setError("");
 
     // Basic validation
-    if (!formData.email || !formData.password) {
-      setError("Please enter both email and password");
+    if (!formData.identifier || !formData.password) {
+      setError("Please enter email/phone and password");
       setIsLoading(false);
       return;
     }
 
     try {
+      const identifier = formData.identifier.trim();
+      const loginPayload = identifier.includes("@")
+        ? { email: identifier, password: formData.password }
+        : { phone: identifier, password: formData.password };
+
       const response = await fetch("http://localhost:5000/api/delivery-partner/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(loginPayload),
       });
 
-      const data = await response.json();
+      const data = await parseApiResponse(response);
 
       if (response.ok) {
-        // Save token
-        localStorage.setItem("token", data.token);
-        localStorage.setItem("user", JSON.stringify(data.user));
-        
-        // Handle "Remember Me"
+        saveDeliverySession(data, rememberMe);
+
         if (rememberMe) {
-          localStorage.setItem("rememberedEmail", formData.email);
+          localStorage.setItem("rememberedDeliveryLogin", identifier);
         } else {
-          localStorage.removeItem("rememberedEmail");
+          localStorage.removeItem("rememberedDeliveryLogin");
         }
         
-        // Redirect to dashboard
-        router.push("/");
+        const nextPath = new URLSearchParams(window.location.search).get("next");
+        router.replace(nextPath || "/");
       } else {
         setError(data.message || "Invalid email or password");
       }
@@ -72,6 +102,43 @@ export default function DeliveryPartnerLogin() {
       setError("Network error. Please check your connection.");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    if (isLoading || isGoogleLoading) return;
+
+    setError("");
+
+    try {
+      setIsGoogleLoading(true);
+
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: "select_account" });
+      const firebaseResult = await signInWithPopup(auth, provider);
+      const firebaseIdToken = await firebaseResult.user.getIdToken();
+
+      const response = await fetch("http://localhost:5000/api/delivery-partner/google", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ firebaseIdToken }),
+      });
+
+      const data = await parseApiResponse(response);
+
+      if (!response.ok) {
+        throw new Error(data.message || "Google login failed");
+      }
+
+      saveDeliverySession(data, rememberMe);
+
+      const nextPath = new URLSearchParams(window.location.search).get("next");
+      router.replace(nextPath || "/");
+    } catch (err) {
+      console.error("Delivery Google login error:", err);
+      setError(err.message || "Google login failed");
+    } finally {
+      setIsGoogleLoading(false);
     }
   };
 
@@ -108,7 +175,7 @@ export default function DeliveryPartnerLogin() {
             {/* Email Field */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Email Address
+                Email or Phone
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -117,12 +184,12 @@ export default function DeliveryPartnerLogin() {
                   </svg>
                 </div>
                 <input
-                  type="email"
-                  name="email"
-                  value={formData.email}
+                  type="text"
+                  name="identifier"
+                  value={formData.identifier}
                   onChange={handleChange}
                   className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition"
-                  placeholder="partner@delivery.com"
+                  placeholder="partner@example.com or 9876543210"
                   required
                 />
               </div>
@@ -179,7 +246,7 @@ export default function DeliveryPartnerLogin() {
                 <span className="ml-2 text-sm text-gray-600">Remember me</span>
               </label>
               <Link
-                href="/delivery-partner/forgot-password"
+                href="/login"
                 className="text-sm text-orange-600 hover:text-orange-700 font-medium"
               >
                 Forgot password?
@@ -202,6 +269,31 @@ export default function DeliveryPartnerLogin() {
                 </>
               ) : (
                 "Sign In"
+              )}
+            </button>
+
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-200" />
+              </div>
+              <div className="relative flex justify-center text-sm">
+                <span className="bg-white px-3 text-gray-500">or</span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleGoogleLogin}
+              disabled={isLoading || isGoogleLoading}
+              className="w-full border border-gray-300 hover:bg-gray-50 text-gray-800 font-semibold py-3 rounded-lg transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {isGoogleLoading ? (
+                "Connecting..."
+              ) : (
+                <>
+                  <Chrome size={20} />
+                  Continue with Google
+                </>
               )}
             </button>
 

@@ -1,7 +1,8 @@
 // app/delivery/history/page.jsx
 "use client";
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import SuperLayout from '../SuperLayout/page';
+import { deliveryApi } from '../lib/deliveryApi';
 import {
   Package,
   Search,
@@ -46,7 +47,31 @@ export default function DeliveryHistory() {
   const [currentPage, setCurrentPage] = useState(1);
   const [viewMode, setViewMode] = useState('list'); // 'list' or 'grid'
   const [selectedDelivery, setSelectedDelivery] = useState(null);
+  const [apiDeliveries, setApiDeliveries] = useState(null);
+  const [apiError, setApiError] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
   const deliveriesPerPage = 5;
+
+  useEffect(() => {
+    let mounted = true;
+
+    deliveryApi('/delivery/history')
+      .then((data) => {
+        if (mounted) setApiDeliveries(data.deliveries || []);
+      })
+      .catch((err) => {
+        if (!mounted) return;
+        setApiError(err.message || 'Failed to load delivery history');
+        setApiDeliveries([]);
+      })
+      .finally(() => {
+        if (mounted) setIsLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   // Historical deliveries data
   const deliveries = [
@@ -220,11 +245,16 @@ export default function DeliveryHistory() {
     },
   ];
 
+  const displayDeliveries = apiDeliveries ?? [];
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const weekStart = new Date();
+  weekStart.setDate(weekStart.getDate() - 7);
+
   // Stats
   const stats = [
     { 
       label: 'Total Deliveries', 
-      value: deliveries.length, 
+      value: displayDeliveries.length, 
       icon: Package, 
       color: 'emerald',
       change: '+12 this month'
@@ -254,11 +284,11 @@ export default function DeliveryHistory() {
 
   // Rating distribution
   const ratingDistribution = {
-    5: deliveries.filter(d => d.rating === 5).length,
-    4: deliveries.filter(d => d.rating === 4).length,
-    3: deliveries.filter(d => d.rating === 3).length,
-    2: deliveries.filter(d => d.rating === 2).length,
-    1: deliveries.filter(d => d.rating === 1).length,
+    5: displayDeliveries.filter(d => d.rating === 5).length,
+    4: displayDeliveries.filter(d => d.rating === 4).length,
+    3: displayDeliveries.filter(d => d.rating === 3).length,
+    2: displayDeliveries.filter(d => d.rating === 2).length,
+    1: displayDeliveries.filter(d => d.rating === 1).length,
   };
 
   const getRatingStars = (rating) => {
@@ -286,16 +316,18 @@ export default function DeliveryHistory() {
   };
 
   // Filter deliveries
-  const filteredDeliveries = deliveries.filter(delivery => {
+  const filteredDeliveries = displayDeliveries.filter(delivery => {
     const matchesSearch = 
       delivery.customer.toLowerCase().includes(searchTerm.toLowerCase()) ||
       delivery.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
       delivery.address.toLowerCase().includes(searchTerm.toLowerCase()) ||
       delivery.restaurant.toLowerCase().includes(searchTerm.toLowerCase());
     
+    const deliveryDate = delivery.date ? new Date(delivery.date) : null;
     const matchesDate = dateFilter === 'all' || 
-      (dateFilter === 'today' && delivery.date === '2024-01-15') ||
-      (dateFilter === 'week' && delivery.date >= '2024-01-08');
+      (dateFilter === 'today' && delivery.date === todayKey) ||
+      (dateFilter === 'week' && deliveryDate && deliveryDate >= weekStart) ||
+      dateFilter === 'month';
     
     const matchesRating = ratingFilter === 'all' || delivery.rating === parseInt(ratingFilter);
     
@@ -309,7 +341,9 @@ export default function DeliveryHistory() {
   const totalPages = Math.ceil(filteredDeliveries.length / deliveriesPerPage);
 
   // Calculate average rating
-  const avgRating = (deliveries.reduce((acc, d) => acc + d.rating, 0) / deliveries.length).toFixed(1);
+  const avgRating = displayDeliveries.length
+    ? (displayDeliveries.reduce((acc, d) => acc + d.rating, 0) / displayDeliveries.length).toFixed(1)
+    : "0.0";
 
   return (
     <SuperLayout>
@@ -399,7 +433,7 @@ export default function DeliveryHistory() {
           <div className="space-y-3">
             {[5, 4, 3, 2, 1].map((rating) => {
               const count = ratingDistribution[rating];
-              const percentage = (count / deliveries.length) * 100;
+              const percentage = displayDeliveries.length ? (count / displayDeliveries.length) * 100 : 0;
               return (
                 <div key={rating} className="flex items-center gap-3">
                   <div className="flex items-center gap-1 w-16">
@@ -672,8 +706,12 @@ export default function DeliveryHistory() {
         {filteredDeliveries.length === 0 && (
           <div className="text-center py-16 bg-white rounded-2xl border border-gray-100">
             <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-gray-800 mb-2">No deliveries found</h3>
-            <p className="text-gray-500 mb-4">Try adjusting your search or filter criteria</p>
+            <h3 className="text-lg font-semibold text-gray-800 mb-2">
+              {isLoading ? 'Loading delivery history...' : 'No deliveries found'}
+            </h3>
+            <p className="text-gray-500 mb-4">
+              {apiError || (isLoading ? 'Fetching your completed deliveries from backend.' : 'Try adjusting your search or filter criteria')}
+            </p>
             <button 
               onClick={() => {
                 setSearchTerm('');

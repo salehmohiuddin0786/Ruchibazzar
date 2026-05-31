@@ -13,6 +13,7 @@ const Offer = require("./offer.model")(sequelize);
 const Banner = require("./banner.model")(sequelize);
 const AuditLog = require("./auditLog.model")(sequelize);
 const Cart = require("./cart.model")(sequelize);
+const UserAddress = require("./userAddress.model")(sequelize);
 
 /* ================= ASSOCIATIONS ================= */
 const initAssociations = () => {
@@ -26,6 +27,9 @@ const initAssociations = () => {
 
   User.hasMany(Review, { foreignKey: "userId", as: "reviews" });
   Review.belongsTo(User, { foreignKey: "userId", as: "user" });
+
+  User.hasMany(UserAddress, { foreignKey: "userId", as: "addresses" });
+  UserAddress.belongsTo(User, { foreignKey: "userId", as: "user" });
 
 
   /* ---------- RESTAURANT ---------- */
@@ -89,4 +93,5 @@ module.exports = {
   Banner,
   AuditLog,
   Cart,
+  UserAddress,
 };

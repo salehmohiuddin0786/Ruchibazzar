@@ -6,22 +6,85 @@ const {
   User,
   Restaurant,
   Dish,
+  DeliveryPartner,
+  UserAddress,
 } = require("../models");
 
-const { ORDER_STATUS } = require("../config/constants");
+const { ORDER_STATUS, DELIVERY_STATUS } = require("../config/constants");
 const { calculateAndCreateEarning } = require("../services/commission.service");
-const { assignDeliveryPartner } = require("../services/orderAssignment.service");
 const { sendNotification } = require("../services/notification.service");
+const orderSocket = require("../sockets/order.socket");
+
+const findLinkedUserForPartner = async (partner) => {
+  if (partner.email) {
+    const byEmail = await User.findOne({
+      where: { email: partner.email, role: "partner", isActive: true },
+    });
+
+    if (byEmail) return byEmail;
+  }
+
+  return User.findOne({
+    where: { phone: partner.phone, role: "partner", isActive: true },
+  });
+};
+
+const saveCustomerAddressFromOrder = async ({ userId, deliveryAddress, latitude, longitude, savedAddress }) => {
+  const street =
+    savedAddress?.street ||
+    savedAddress?.streetAddress ||
+    savedAddress?.finalAddress ||
+    deliveryAddress;
+
+  if (!userId || !street) return;
+
+  const existing = await UserAddress.findOne({
+    where: { userId, street },
+  });
+
+  const payload = {
+    userId,
+    type: savedAddress?.type || "home",
+    street,
+    city: savedAddress?.city || savedAddress?.cityName || "",
+    state: savedAddress?.state || savedAddress?.stateName || "",
+    zipCode: savedAddress?.zipCode || savedAddress?.pincode || "",
+    landmark: savedAddress?.landmark || savedAddress?.colonyName || "",
+    phone: savedAddress?.phone || savedAddress?.contactNumber || "",
+    contactName: savedAddress?.contactName || "",
+    latitude: latitude === "" || latitude === undefined ? null : latitude,
+    longitude: longitude === "" || longitude === undefined ? null : longitude,
+  };
+
+  if (existing) {
+    await existing.update(payload);
+    return;
+  }
+
+  const count = await UserAddress.count({ where: { userId } });
+  await UserAddress.create({ ...payload, isDefault: count === 0 });
+};
 
 /*
 ---------------------------------------
 HELPER: FORMAT ORDER FOR FRONTEND
 ---------------------------------------
 */
+const getDisplayOrderStatus = (order) => {
+  const status = String(order.status || "").toLowerCase();
+  const deliveryStatus = String(order.deliveryStatus || "").toLowerCase();
+
+  if (status === "out_for_delivery" || deliveryStatus === "on_the_way") return "on the way";
+  if (status === "picked_up" || deliveryStatus === "picked") return "on the way";
+  if (status === "delivered" || deliveryStatus === "delivered") return "delivered";
+
+  return order.status;
+};
+
 const formatOrder = (order) => ({
   id: order.id,
   orderNumber: `ORD-${order.id}`,
-  status: order.status,
+  status: getDisplayOrderStatus(order),
   createdAt: order.createdAt,
 
   totalAmount: Number(order.totalAmount || 0),
@@ -30,6 +93,16 @@ const formatOrder = (order) => ({
   deliveryFee: 0,
 
   deliveryAddress: order.deliveryAddress,
+  deliveryPartnerId: order.deliveryPartnerId,
+  deliveryPartnerName: order.deliveryPartner?.name || null,
+  deliveryStatus: order.deliveryStatus,
+  driver: order.deliveryPartner
+    ? {
+        id: order.deliveryPartner.id,
+        name: order.deliveryPartner.name,
+        phone: order.deliveryPartner.phone,
+      }
+    : null,
 
   // ✅ Coordinates saved in backend
   deliveryLat: order.deliveryLat,
@@ -62,6 +135,7 @@ CREATE ORDER
 */
 exports.createOrder = async (req, res) => {
   const transaction = await sequelize.transaction();
+  let committed = false;
 
   try {
     const {
@@ -71,6 +145,7 @@ exports.createOrder = async (req, res) => {
       couponCode,
       latitude,
       longitude,
+      savedAddress,
     } = req.body;
 
     if (!req.user || req.user.role !== "customer") {
@@ -201,6 +276,7 @@ exports.createOrder = async (req, res) => {
         deliveryLng,
 
         status: ORDER_STATUS.PENDING,
+        deliveryStatus: DELIVERY_STATUS.NOT_ASSIGNED,
       },
       { transaction }
     );
@@ -216,8 +292,19 @@ exports.createOrder = async (req, res) => {
     );
 
     await transaction.commit();
+    committed = true;
 
     calculateAndCreateEarning(order).catch(() => {});
+
+    saveCustomerAddressFromOrder({
+      userId,
+      deliveryAddress,
+      latitude: deliveryLat,
+      longitude: deliveryLng,
+      savedAddress,
+    }).catch((addressError) => {
+      console.error("SAVE ORDER ADDRESS ERROR:", addressError.message);
+    });
 
     sendNotification({
       userId,
@@ -225,24 +312,33 @@ exports.createOrder = async (req, res) => {
       message: `Order #${order.id} placed`,
     }).catch(() => {});
 
-    const fullOrder = await Order.findByPk(order.id, {
-      include: [
-        {
-          model: OrderItem,
-          as: "orderItems",
-          include: [{ model: Dish, as: "dish" }],
-        },
-        { model: User, as: "user" },
-        { model: Restaurant, as: "restaurant" },
-      ],
-    });
+    let fullOrder = order;
+
+    try {
+      fullOrder = await Order.findByPk(order.id, {
+        include: [
+          {
+            model: OrderItem,
+            as: "orderItems",
+            include: [{ model: Dish, as: "dish" }],
+          },
+          { model: User, as: "user" },
+          { model: Restaurant, as: "restaurant" },
+          { model: DeliveryPartner, as: "deliveryPartner" },
+        ],
+      });
+    } catch (lookupError) {
+      console.error("CREATE ORDER LOOKUP ERROR:", lookupError.message);
+    }
 
     return res.status(201).json({
       success: true,
-      order: formatOrder(fullOrder),
+      order: formatOrder(fullOrder || order),
     });
   } catch (error) {
-    await transaction.rollback();
+    if (!committed && !transaction.finished) {
+      await transaction.rollback();
+    }
 
     console.error("CREATE ORDER ERROR:", error);
 
@@ -270,6 +366,7 @@ exports.getUserOrders = async (req, res) => {
         },
         { model: User, as: "user" },
         { model: Restaurant, as: "restaurant" },
+        { model: DeliveryPartner, as: "deliveryPartner" },
       ],
       order: [["createdAt", "DESC"]],
     });
@@ -314,6 +411,7 @@ exports.getRestaurantOrders = async (req, res) => {
         },
         { model: User, as: "user" },
         { model: Restaurant, as: "restaurant" },
+        { model: DeliveryPartner, as: "deliveryPartner" },
       ],
       order: [["createdAt", "DESC"]],
     });
@@ -348,6 +446,7 @@ exports.getOrderById = async (req, res) => {
         },
         { model: User, as: "user" },
         { model: Restaurant, as: "restaurant" },
+        { model: DeliveryPartner, as: "deliveryPartner" },
       ],
     });
 
@@ -379,7 +478,7 @@ UPDATE ORDER STATUS
 */
 exports.updateOrderStatus = async (req, res) => {
   try {
-    const { status } = req.body;
+    const { status, deliveryPartnerId } = req.body;
 
     const order = await Order.findByPk(req.params.id);
 
@@ -390,10 +489,40 @@ exports.updateOrderStatus = async (req, res) => {
       });
     }
 
-    await order.update({ status });
+    const updates = { status };
+    let assignedPartner = null;
 
-    if (status === ORDER_STATUS.CONFIRMED) {
-      await assignDeliveryPartner(order.id).catch(() => {});
+    if (deliveryPartnerId) {
+      assignedPartner = await DeliveryPartner.findByPk(deliveryPartnerId);
+
+      if (
+        !assignedPartner ||
+        !assignedPartner.isActive
+      ) {
+        return res.status(404).json({
+          success: false,
+          message: "Delivery partner not found",
+        });
+      }
+
+      updates.deliveryPartnerId = assignedPartner.id;
+      updates.deliveryStatus = DELIVERY_STATUS.ASSIGNED;
+      updates.assignmentExpiresAt = null;
+    }
+
+    await order.update(updates);
+
+    if (assignedPartner) {
+      const linkedUser = await findLinkedUserForPartner(assignedPartner);
+      await assignedPartner.update({ isAvailable: false });
+      if (linkedUser) await linkedUser.update({ isAvailable: false });
+      order.status = ORDER_STATUS.OUT_FOR_DELIVERY;
+      await order.save();
+      orderSocket.emitDeliveryAssigned(order, {
+        id: linkedUser?.id || assignedPartner.id,
+        name: assignedPartner.name,
+      });
+      orderSocket.emitOrderStatusUpdate(order);
     }
 
     sendNotification({

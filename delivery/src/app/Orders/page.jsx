@@ -1,7 +1,8 @@
 // app/delivery/orders/page.jsx
 "use client";
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import SuperLayout from '../SuperLayout/page';
+import { deliveryApi, formatRupee } from '../lib/deliveryApi';
 import {
   Package,
   Search,
@@ -33,7 +34,8 @@ import {
   Shield,
   Coffee,
   Map,
-  Navigation
+  Navigation,
+  RefreshCw
 } from 'lucide-react';
 
 export default function DeliveryOrders() {
@@ -42,7 +44,62 @@ export default function DeliveryOrders() {
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [viewMode, setViewMode] = useState('table'); // 'table' or 'grid'
+  const [apiOrders, setApiOrders] = useState(null);
+  const [apiError, setApiError] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [updatingOrderId, setUpdatingOrderId] = useState(null);
   const ordersPerPage = 6;
+
+  const loadOrders = async () => {
+    setIsRefreshing(true);
+    setApiError('');
+
+    try {
+      const data = await deliveryApi('/delivery/my-orders');
+      setApiOrders(data.orders || []);
+    } catch (err) {
+      setApiError(err.message || 'Failed to load orders');
+      setApiOrders([]);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadMountedOrders = () => {
+      deliveryApi('/delivery/my-orders')
+      .then((data) => {
+        if (mounted) setApiOrders(data.orders || []);
+      })
+      .catch((err) => {
+        if (mounted) setApiError(err.message || 'Failed to load orders');
+      });
+    };
+
+    loadMountedOrders();
+    window.addEventListener('deliveryOrdersChanged', loadMountedOrders);
+
+    return () => {
+      mounted = false;
+      window.removeEventListener('deliveryOrdersChanged', loadMountedOrders);
+    };
+  }, []);
+
+  const goOnline = async () => {
+    setApiError('');
+
+    try {
+      await deliveryApi('/delivery/availability', {
+        method: 'PUT',
+        body: JSON.stringify({ isAvailable: true }),
+      });
+      await loadOrders();
+    } catch (err) {
+      setApiError(err.message || 'Failed to update availability');
+    }
+  };
 
   const orders = [
     { 
@@ -171,6 +228,12 @@ export default function DeliveryOrders() {
         label: "Picked Up",
         gradient: "from-blue-500 to-cyan-500"
       },
+      on_the_way: {
+        color: "bg-indigo-100 text-indigo-700 border-indigo-200",
+        icon: Navigation,
+        label: "On The Way",
+        gradient: "from-indigo-500 to-purple-500"
+      },
       delivered: { 
         color: "bg-emerald-100 text-emerald-700 border-emerald-200", 
         icon: CheckCircle, 
@@ -215,8 +278,186 @@ export default function DeliveryOrders() {
     );
   };
 
+  const displayOrders = apiOrders ?? [];
+  const hasLoadedApiOrders = Array.isArray(apiOrders);
+
+  const cleanPhoneNumber = (phone) => String(phone || '').replace(/[^\d+]/g, '');
+  const getMapsUrl = (address) =>
+    address
+      ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
+      : '';
+
+  const callCustomer = (order, event) => {
+    event?.stopPropagation();
+    const phone = cleanPhoneNumber(order.phone);
+    if (!phone) {
+      setApiError('Customer phone number is not available');
+      return;
+    }
+    window.location.href = `tel:${phone}`;
+  };
+
+  const openNavigation = (address, event) => {
+    event?.stopPropagation();
+    const mapsUrl = getMapsUrl(address);
+    if (!mapsUrl) {
+      setApiError('Navigation address is not available');
+      return;
+    }
+    window.open(mapsUrl, '_blank', 'noopener,noreferrer');
+  };
+
+  const getOrderRawId = (order) => order.rawId || String(order.id || '').replace(/\D/g, '');
+
+  const getBrowserPosition = () =>
+    new Promise((resolve, reject) => {
+      if (typeof navigator === 'undefined' || !navigator.geolocation) {
+        reject(new Error('Location is not supported in this browser'));
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 15000,
+      });
+    });
+
+  const shareLiveLocation = async (order, event, silent = false) => {
+    event?.stopPropagation();
+    const orderId = getOrderRawId(order);
+
+    if (!orderId) {
+      if (!silent) setApiError('Order ID is not available');
+      return;
+    }
+
+    try {
+      const position = await getBrowserPosition();
+      const lat = position.coords.latitude;
+      const lng = position.coords.longitude;
+
+      await deliveryApi(`/delivery/location/${orderId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ lat, lng }),
+      });
+
+      const updatedOrder = {
+        ...order,
+        deliveryLat: lat,
+        deliveryLng: lng,
+        liveTrackingAt: new Date().toISOString(),
+      };
+
+      setApiOrders((prevOrders) =>
+        Array.isArray(prevOrders)
+          ? prevOrders.map((item) => (item.id === order.id ? updatedOrder : item))
+          : prevOrders
+      );
+      setSelectedOrder((current) => (current?.id === order.id ? updatedOrder : current));
+
+      if (!silent) setApiError('');
+    } catch (err) {
+      if (!silent) {
+        setApiError(err.message || 'Unable to share live location');
+      }
+    }
+  };
+
+  const updateDeliveryStep = async (order, action, nextStatus, event) => {
+    event?.stopPropagation();
+    const orderId = getOrderRawId(order);
+
+    if (!orderId) {
+      setApiError('Order ID is not available');
+      return;
+    }
+
+    setUpdatingOrderId(order.id);
+    setApiError('');
+
+    try {
+      await deliveryApi(`/delivery/${action}/${orderId}`, { method: 'PUT' });
+      const updatedOrder = { ...order, status: nextStatus };
+
+      setApiOrders((prevOrders) =>
+        Array.isArray(prevOrders)
+          ? prevOrders.map((item) => (item.id === order.id ? updatedOrder : item))
+          : prevOrders
+      );
+
+      setSelectedOrder((current) => (current?.id === order.id ? updatedOrder : current));
+      await loadOrders();
+    } catch (err) {
+      setApiError(err.message || 'Failed to update delivery status');
+    } finally {
+      setUpdatingOrderId(null);
+    }
+  };
+
+  const renderDeliveryStepButton = (order, isFullWidth = false) => {
+    const buttonBase = `${isFullWidth ? 'w-full justify-center px-4 py-3' : 'px-3 py-2'} inline-flex items-center gap-2 rounded-xl text-sm font-semibold transition-all disabled:opacity-60`;
+    const isUpdating = updatingOrderId === order.id;
+
+    if (order.status === 'assigned') {
+      return (
+        <button
+          onClick={(event) => updateDeliveryStep(order, 'pick', 'picked', event)}
+          disabled={isUpdating}
+          className={`${buttonBase} bg-emerald-600 text-white hover:bg-emerald-700`}
+        >
+          <Package size={16} />
+          {isUpdating ? 'Updating...' : 'Picked Up'}
+        </button>
+      );
+    }
+
+    if (order.status === 'picked') {
+      return (
+        <button
+          onClick={(event) => updateDeliveryStep(order, 'start', 'on_the_way', event)}
+          disabled={isUpdating}
+          className={`${buttonBase} bg-indigo-600 text-white hover:bg-indigo-700`}
+        >
+          <Navigation size={16} />
+          {isUpdating ? 'Updating...' : 'Start Delivery'}
+        </button>
+      );
+    }
+
+    if (order.status === 'on_the_way') {
+      return (
+        <button
+          onClick={(event) => updateDeliveryStep(order, 'complete', 'delivered', event)}
+          disabled={isUpdating}
+          className={`${buttonBase} bg-teal-600 text-white hover:bg-teal-700`}
+        >
+          <CheckCircle size={16} />
+          {isUpdating ? 'Updating...' : 'Delivered'}
+        </button>
+      );
+    }
+
+    return null;
+  };
+
+  useEffect(() => {
+    const activeOrder = displayOrders.find((order) =>
+      ['assigned', 'picked', 'on_the_way'].includes(order.status)
+    );
+
+    if (!activeOrder) return undefined;
+
+    shareLiveLocation(activeOrder, null, true);
+    const intervalId = setInterval(() => {
+      shareLiveLocation(activeOrder, null, true);
+    }, 30000);
+
+    return () => clearInterval(intervalId);
+  }, [apiOrders]);
+
   // Filter orders based on search and status
-  const filteredOrders = orders.filter(order => {
+  const filteredOrders = displayOrders.filter(order => {
     const matchesSearch = 
       order.customer.toLowerCase().includes(searchTerm.toLowerCase()) ||
       order.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -238,7 +479,7 @@ export default function DeliveryOrders() {
   const stats = [
     { 
       label: 'Total Orders', 
-      value: orders.length, 
+      value: displayOrders.length, 
       icon: ShoppingBag, 
       color: 'emerald',
       change: '+12%',
@@ -246,7 +487,7 @@ export default function DeliveryOrders() {
     },
     { 
       label: 'Active Deliveries', 
-      value: orders.filter(o => o.status !== 'delivered').length, 
+      value: displayOrders.filter(o => o.status !== 'delivered').length, 
       icon: Truck, 
       color: 'amber',
       change: '3 now',
@@ -254,7 +495,7 @@ export default function DeliveryOrders() {
     },
     { 
       label: 'Completed', 
-      value: orders.filter(o => o.status === 'delivered').length, 
+      value: displayOrders.filter(o => o.status === 'delivered').length, 
       icon: CheckCircle, 
       color: 'blue',
       change: 'today',
@@ -373,6 +614,7 @@ export default function DeliveryOrders() {
                   <option value="all">All Status</option>
                   <option value="assigned">Assigned</option>
                   <option value="picked">Picked Up</option>
+                  <option value="on_the_way">On The Way</option>
                   <option value="delivered">Delivered</option>
                 </select>
               </div>
@@ -480,13 +722,29 @@ export default function DeliveryOrders() {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
-                          <button className="p-2 hover:bg-emerald-100 rounded-lg transition-colors" title="View Details">
+                          {renderDeliveryStepButton(order)}
+                          <button
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setSelectedOrder(order);
+                            }}
+                            className="p-2 hover:bg-emerald-100 rounded-lg transition-colors"
+                            title="View Details"
+                          >
                             <Eye size={16} className="text-gray-500 hover:text-emerald-600" />
                           </button>
-                          <button className="p-2 hover:bg-blue-100 rounded-lg transition-colors" title="Call Customer">
+                          <button
+                            onClick={(event) => callCustomer(order, event)}
+                            className="p-2 hover:bg-blue-100 rounded-lg transition-colors"
+                            title="Call Customer"
+                          >
                             <Phone size={16} className="text-gray-500 hover:text-blue-600" />
                           </button>
-                          <button className="p-2 hover:bg-purple-100 rounded-lg transition-colors" title="Navigate">
+                          <button
+                            onClick={(event) => openNavigation(order.address, event)}
+                            className="p-2 hover:bg-purple-100 rounded-lg transition-colors"
+                            title="Navigate"
+                          >
                             <Navigation size={16} className="text-gray-500 hover:text-purple-600" />
                           </button>
                         </div>
@@ -565,13 +823,29 @@ export default function DeliveryOrders() {
                     <p className="text-lg font-bold text-gray-900">{order.amount}</p>
                   </div>
                   <div className="flex gap-1">
-                    <button className="p-2 hover:bg-emerald-100 rounded-lg transition-colors">
+                    {renderDeliveryStepButton(order)}
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setSelectedOrder(order);
+                      }}
+                      className="p-2 hover:bg-emerald-100 rounded-lg transition-colors"
+                      title="View Details"
+                    >
                       <Eye size={16} className="text-gray-500" />
                     </button>
-                    <button className="p-2 hover:bg-blue-100 rounded-lg transition-colors">
+                    <button
+                      onClick={(event) => callCustomer(order, event)}
+                      className="p-2 hover:bg-blue-100 rounded-lg transition-colors"
+                      title="Call Customer"
+                    >
                       <Phone size={16} className="text-gray-500" />
                     </button>
-                    <button className="p-2 hover:bg-purple-100 rounded-lg transition-colors">
+                    <button
+                      onClick={(event) => openNavigation(order.address, event)}
+                      className="p-2 hover:bg-purple-100 rounded-lg transition-colors"
+                      title="Navigate"
+                    >
                       <Navigation size={16} className="text-gray-500" />
                     </button>
                   </div>
@@ -592,18 +866,46 @@ export default function DeliveryOrders() {
         {filteredOrders.length === 0 && (
           <div className="text-center py-16 bg-white rounded-2xl border border-gray-100">
             <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-gray-800 mb-2">No orders found</h3>
-            <p className="text-gray-500 mb-4">Try adjusting your search or filter criteria</p>
-            <button 
-              onClick={() => {
-                setSearchTerm('');
-                setStatusFilter('all');
-              }}
-              className="inline-flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white px-6 py-3 rounded-xl text-sm font-medium hover:shadow-lg transition-all"
-            >
-              <Filter size={16} />
-              Clear Filters
-            </button>
+            <h3 className="text-lg font-semibold text-gray-800 mb-2">
+              {hasLoadedApiOrders ? 'No assigned orders yet' : 'No orders found'}
+            </h3>
+            <p className="text-gray-500 mb-4 max-w-md mx-auto">
+              {hasLoadedApiOrders
+                ? 'New delivery orders appear here after the restaurant marks an order Ready and you accept the 30-second popup.'
+                : 'Try adjusting your search or filter criteria.'}
+            </p>
+            {apiError && (
+              <p className="mx-auto mb-4 max-w-md rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 border border-red-100">
+                {apiError}
+              </p>
+            )}
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <button 
+                onClick={() => {
+                  setSearchTerm('');
+                  setStatusFilter('all');
+                }}
+                className="inline-flex items-center gap-2 border border-gray-200 text-gray-700 px-6 py-3 rounded-xl text-sm font-medium hover:bg-gray-50 transition-all"
+              >
+                <Filter size={16} />
+                Clear Filters
+              </button>
+              <button
+                onClick={loadOrders}
+                disabled={isRefreshing}
+                className="inline-flex items-center gap-2 bg-white border border-emerald-200 text-emerald-700 px-6 py-3 rounded-xl text-sm font-medium hover:bg-emerald-50 transition-all disabled:opacity-60"
+              >
+                <RefreshCw size={16} className={isRefreshing ? 'animate-spin' : ''} />
+                {isRefreshing ? 'Refreshing...' : 'Refresh'}
+              </button>
+              <button
+                onClick={goOnline}
+                className="inline-flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white px-6 py-3 rounded-xl text-sm font-medium hover:shadow-lg transition-all"
+              >
+                <Truck size={16} />
+                Go Online
+              </button>
+            </div>
           </div>
         )}
 
@@ -762,6 +1064,179 @@ export default function DeliveryOrders() {
 
         {/* Order Details Modal */}
         {selectedOrder && (
+          <div
+            className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+            onClick={() => setSelectedOrder(null)}
+          >
+            <div
+              className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-white/60"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="relative overflow-hidden p-6 bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 text-white">
+                <div className="absolute inset-0 bg-grid-pattern opacity-20"></div>
+                <div className="relative flex items-start justify-between gap-4">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2 mb-3">
+                      <span className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-semibold">
+                        <Package size={13} />
+                        {selectedOrder.id}
+                      </span>
+                      <span className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-semibold">
+                        <Timer size={13} />
+                        {selectedOrder.estimatedTime}
+                      </span>
+                    </div>
+                    <h2 className="text-2xl font-bold">Order Details</h2>
+                    <p className="text-sm text-emerald-50 mt-1">Pickup, customer contact, and delivery route</p>
+                  </div>
+                  <button
+                    onClick={() => setSelectedOrder(null)}
+                    className="h-10 w-10 rounded-xl bg-white/15 hover:bg-white/25 text-white font-semibold transition-colors"
+                    aria-label="Close order details"
+                  >
+                    X
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-6 space-y-5">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-4">
+                    <p className="text-xs font-semibold uppercase text-emerald-700">Status</p>
+                    <div className="mt-2">{getStatusBadge(selectedOrder.status)}</div>
+                  </div>
+                  <div className="rounded-xl bg-amber-50 border border-amber-100 p-4">
+                    <p className="text-xs font-semibold uppercase text-amber-700">Earning</p>
+                    <p className="mt-1 text-xl font-bold text-gray-900">{selectedOrder.deliveryFee}</p>
+                  </div>
+                  <div className="rounded-xl bg-cyan-50 border border-cyan-100 p-4">
+                    <p className="text-xs font-semibold uppercase text-cyan-700">Distance</p>
+                    <p className="mt-1 text-xl font-bold text-gray-900">{selectedOrder.distance}</p>
+                  </div>
+                </div>
+
+                {renderDeliveryStepButton(selectedOrder, true)}
+
+                {['assigned', 'picked', 'on_the_way'].includes(selectedOrder.status) && (
+                  <button
+                    onClick={(event) => shareLiveLocation(selectedOrder, event)}
+                    className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-700 hover:bg-indigo-100 transition-colors"
+                  >
+                    <Map size={16} />
+                    Share Live Location
+                  </button>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+                    <div className="flex items-start gap-3">
+                      <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 text-white flex items-center justify-center font-bold">
+                        {selectedOrder.customer?.charAt(0) || 'C'}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold uppercase text-gray-500">Customer</p>
+                        <h3 className="text-lg font-bold text-gray-900 truncate">{selectedOrder.customer}</h3>
+                        <p className="text-sm text-gray-500 flex items-center gap-1 mt-1">
+                          <Phone size={14} />
+                          {selectedOrder.phone || 'Phone not available'}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => callCustomer(selectedOrder)}
+                      className="mt-4 w-full inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700 transition-colors"
+                    >
+                      <Phone size={16} />
+                      Call Customer
+                    </button>
+                  </div>
+
+                  <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+                    <div className="flex items-start gap-3">
+                      <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 text-white flex items-center justify-center">
+                        <Store size={20} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold uppercase text-gray-500">Pickup From</p>
+                        <h3 className="text-lg font-bold text-gray-900 truncate">{selectedOrder.restaurant}</h3>
+                        <p className="text-sm text-gray-500 mt-1">
+                          {selectedOrder.restaurantAddress || 'Restaurant address not available'}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => openNavigation(selectedOrder.restaurantAddress || selectedOrder.restaurant)}
+                      className="mt-4 w-full inline-flex items-center justify-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-700 hover:bg-amber-100 transition-colors"
+                    >
+                      <MapPin size={16} />
+                      Navigate to Pickup
+                    </button>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-gray-100 bg-gradient-to-r from-gray-50 to-white p-5 shadow-sm">
+                  <div className="flex items-start gap-3">
+                    <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-500 text-white flex items-center justify-center">
+                      <Navigation size={20} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-semibold uppercase text-gray-500">Delivery Address</p>
+                      <h3 className="text-base font-semibold text-gray-900 mt-1">{selectedOrder.address}</h3>
+                      {selectedOrder.customerNote && (
+                        <p className="mt-3 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+                          {selectedOrder.customerNote}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => openNavigation(selectedOrder.address)}
+                    className="mt-4 w-full inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-3 text-sm font-semibold text-white hover:shadow-lg transition-all"
+                  >
+                    <Navigation size={16} />
+                    Start Delivery Navigation
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="rounded-xl bg-gray-50 p-3">
+                    <p className="text-xs text-gray-500">Amount</p>
+                    <p className="font-bold text-gray-900">{selectedOrder.amount}</p>
+                  </div>
+                  <div className="rounded-xl bg-gray-50 p-3">
+                    <p className="text-xs text-gray-500">Payment</p>
+                    <p className="font-bold text-gray-900">{selectedOrder.paymentMethod}</p>
+                  </div>
+                  <div className="rounded-xl bg-gray-50 p-3">
+                    <p className="text-xs text-gray-500">Items</p>
+                    <p className="font-bold text-gray-900">{selectedOrder.items} items</p>
+                  </div>
+                  <div className="rounded-xl bg-gray-50 p-3">
+                    <p className="text-xs text-gray-500">Priority</p>
+                    <div className="mt-1">{getPriorityBadge(selectedOrder.priority)}</div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-3 pt-2">
+                  <button
+                    onClick={() => setSelectedOrder(null)}
+                    className="px-5 py-3 border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    Close
+                  </button>
+                  <button
+                    onClick={() => openNavigation(selectedOrder.address)}
+                    className="px-5 py-3 bg-gray-900 text-white rounded-xl text-sm font-semibold hover:bg-gray-800 transition-colors inline-flex items-center gap-2"
+                  >
+                    <Navigation size={16} />
+                    Navigate
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        {false && selectedOrder && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setSelectedOrder(null)}>
             <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
               <div className="p-6 border-b border-gray-100 bg-gradient-to-r from-emerald-50 to-teal-50">

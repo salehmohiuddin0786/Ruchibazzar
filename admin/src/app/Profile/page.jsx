@@ -32,6 +32,15 @@ import Header from "../components/Header";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
+const getMediaUrl = (path) => {
+  if (!path) return "";
+  const value = String(path).trim();
+  if (!value) return "";
+  if (/^(https?:|data:|blob:)/i.test(value)) return value;
+  if (value.startsWith("/")) return `${API_URL}${value}`;
+  return `${API_URL}/uploads/${value}`;
+};
+
 const defaultProfile = {
   restaurantName: "",
   ownerName: "",
@@ -80,6 +89,7 @@ export default function Profile() {
 
   const [profileData, setProfileData] = useState(defaultProfile);
   const [profileImage, setProfileImage] = useState("");
+  const [profileImageFile, setProfileImageFile] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
   const [activeTab, setActiveTab] = useState("profile");
   const [showMobileTabs, setShowMobileTabs] = useState(false);
@@ -130,7 +140,7 @@ export default function Profile() {
           totalReviews: Number(restaurant.totalReviews || 0),
         });
 
-        setProfileImage(restaurant.image || restaurant.logo || "");
+        setProfileImage(getMediaUrl(restaurant.image || restaurant.logo || ""));
       } catch (err) {
         console.error(err);
         setError("Failed to load profile data.");
@@ -181,6 +191,7 @@ export default function Profile() {
     const reader = new FileReader();
     reader.onloadend = () => setProfileImage(reader.result);
     reader.readAsDataURL(file);
+    setProfileImageFile(file);
   };
 
   const handleSaveProfile = async () => {
@@ -196,34 +207,32 @@ export default function Profile() {
         return;
       }
 
-      const payload = {
-        name: profileData.restaurantName,
-        restaurantName: profileData.restaurantName,
-        ownerName: profileData.ownerName,
-        phone: profileData.phone,
-        email: profileData.email,
-        address: profileData.address,
-        openingTime: profileData.openingTime,
-        closingTime: profileData.closingTime,
-        website: profileData.website,
-        description: profileData.description,
-        cuisineType: profileData.cuisineType
-          .split(",")
-          .map((item) => item.trim())
-          .filter(Boolean),
-        deliveryRadius: profileData.deliveryRadius,
-        avgPreparationTime: profileData.avgPreparationTime,
-        restaurantSince: profileData.restaurantSince,
-        image: profileImage,
-      };
+      const payload = new FormData();
+      payload.append("name", profileData.restaurantName);
+      payload.append("restaurantName", profileData.restaurantName);
+      payload.append("ownerName", profileData.ownerName);
+      payload.append("phone", profileData.phone);
+      payload.append("email", profileData.email);
+      payload.append("address", profileData.address);
+      payload.append("openingTime", profileData.openingTime);
+      payload.append("closingTime", profileData.closingTime);
+      payload.append("website", profileData.website);
+      payload.append("description", profileData.description);
+      payload.append("cuisineType", profileData.cuisineType);
+      payload.append("deliveryRadius", profileData.deliveryRadius);
+      payload.append("avgPreparationTime", profileData.avgPreparationTime);
+      payload.append("restaurantSince", profileData.restaurantSince);
+
+      if (profileImageFile) {
+        payload.append("logo", profileImageFile);
+      }
 
       const response = await fetch(`${API_URL}/api/restaurants/profile`, {
         method: "PUT",
         headers: {
-          "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(payload),
+        body: payload,
       });
 
       const data = await response.json().catch(() => ({}));
@@ -232,9 +241,11 @@ export default function Profile() {
         throw new Error(data.message || "Failed to save profile.");
       }
 
-      const updatedRestaurant = data.restaurant || payload;
+      const updatedRestaurant = data.restaurant || {};
 
       localStorage.setItem("restaurant", JSON.stringify(updatedRestaurant));
+      setProfileImage(getMediaUrl(updatedRestaurant.image || updatedRestaurant.logo || ""));
+      setProfileImageFile(null);
 
       const oldUser = JSON.parse(localStorage.getItem("user") || "{}");
       localStorage.setItem(

@@ -1,5 +1,5 @@
 const { DataTypes } = require("sequelize");
-const { ORDER_STATUS, PAYMENT_STATUS } = require("../config/constants");
+const { ORDER_STATUS, PAYMENT_STATUS, DELIVERY_STATUS } = require("../config/constants");
 
 module.exports = (sequelize) => {
   return sequelize.define("Order", {
@@ -57,14 +57,13 @@ module.exports = (sequelize) => {
 
     // 📍 DELIVERY STATUS
     deliveryStatus: {
-      type: DataTypes.ENUM(
-        "not_assigned",
-        "assigned",
-        "picked",
-        "on_the_way",
-        "delivered"
-      ),
-      defaultValue: "not_assigned",
+      type: DataTypes.ENUM(...Object.values(DELIVERY_STATUS)),
+      defaultValue: DELIVERY_STATUS.NOT_ASSIGNED,
+    },
+
+    assignmentExpiresAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
     },
 
     // ⏱️ TRACKING

@@ -105,6 +105,8 @@ const Page = () => {
     zipCode: "",
     landmark: "",
     phone: "",
+    latitude: null,
+    longitude: null,
     isDefault: false,
   });
 
@@ -288,7 +290,22 @@ const Page = () => {
     );
 
     const data = await response.json();
-    return data.display_name || `${lat}, ${lng}`;
+    const address = data.address || {};
+
+    return {
+      street:
+        data.display_name ||
+        [address.house_number, address.road, address.suburb || address.neighbourhood]
+          .filter(Boolean)
+          .join(", ") ||
+        `${lat}, ${lng}`,
+      city: address.city || address.town || address.village || address.district || "",
+      state: address.state || "",
+      zipCode: address.postcode || "",
+      landmark: address.suburb || address.neighbourhood || address.locality || "",
+      latitude: lat,
+      longitude: lng,
+    };
   };
 
   const getCurrentLocation = () => {
@@ -307,7 +324,13 @@ const Page = () => {
 
           setAddressForm((prev) => ({
             ...prev,
-            street: address,
+            street: address.street,
+            city: address.city || prev.city,
+            state: address.state || prev.state,
+            zipCode: address.zipCode || prev.zipCode,
+            landmark: address.landmark || prev.landmark,
+            latitude: address.latitude,
+            longitude: address.longitude,
           }));
 
           showSuccess("Current location fetched successfully!");
@@ -355,7 +378,8 @@ const Page = () => {
         ...updatedUser,
       }));
 
-      localStorage.setItem("user", JSON.stringify(updatedUser));
+      const currentUser = JSON.parse(localStorage.getItem("user") || "{}");
+      localStorage.setItem("user", JSON.stringify({ ...currentUser, ...updatedUser }));
 
       setEditingProfile(false);
       showSuccess("Profile updated successfully!");
@@ -510,6 +534,8 @@ const Page = () => {
       zipCode: "",
       landmark: "",
       phone: "",
+      latitude: null,
+      longitude: null,
       isDefault: false,
     });
   };

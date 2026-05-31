@@ -4,6 +4,7 @@ const { DataTypes } = require("sequelize");
 const ROLES = {
   CUSTOMER: "customer",
   PARTNER: "partner",
+  DELIVERY: "delivery",
   ADMIN: "admin",
 };
 

@@ -1,7 +1,8 @@
 // app/delivery/earnings/page.jsx
 "use client";
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import SuperLayout from '../SuperLayout/page';
+import { deliveryApi } from '../lib/deliveryApi';
 import {
   IndianRupee,
   TrendingUp,
@@ -38,7 +39,31 @@ export default function DeliveryEarnings() {
   const [selectedPeriod, setSelectedPeriod] = useState('week');
   const [currentPage, setCurrentPage] = useState(1);
   const [showChart, setShowChart] = useState(true);
+  const [apiEarnings, setApiEarnings] = useState(null);
+  const [apiError, setApiError] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
   const transactionsPerPage = 5;
+
+  useEffect(() => {
+    let mounted = true;
+
+    deliveryApi('/delivery/earnings')
+      .then((data) => {
+        if (mounted) setApiEarnings(data);
+      })
+      .catch((err) => {
+        if (!mounted) return;
+        setApiError(err.message || 'Failed to load earnings');
+        setApiEarnings({ earnings: {}, transactions: [], weeklyData: [], bonuses: [] });
+      })
+      .finally(() => {
+        if (mounted) setIsLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   // Earnings data
   const earnings = {
@@ -150,16 +175,41 @@ export default function DeliveryEarnings() {
     { type: 'Completion Bonus', amount: 200, date: '2024-01-10' },
   ];
 
+  const liveEarnings = {
+    today: 0,
+    week: 0,
+    month: 0,
+    total: 0,
+    pending: 0,
+    withdrawable: 0,
+    ...(apiEarnings?.earnings || {}),
+  };
+  const liveTransactions = apiEarnings?.transactions || [];
+  const liveWeeklyData = apiEarnings?.weeklyData?.length ? apiEarnings.weeklyData : weeklyData.map((item) => ({ ...item, amount: 0, deliveries: 0 }));
+  const liveBonuses = apiEarnings?.bonuses || [];
+
   const getStatusBadge = (status) => {
+    const normalizedStatus = String(status || 'pending').toLowerCase();
     const config = {
       completed: { color: 'bg-emerald-100 text-emerald-700', icon: TrendingUp },
+      delivered: { color: 'bg-emerald-100 text-emerald-700', icon: TrendingUp },
       pending: { color: 'bg-amber-100 text-amber-700', icon: Clock },
+      assigned: { color: 'bg-blue-100 text-blue-700', icon: Package },
+      picked: { color: 'bg-indigo-100 text-indigo-700', icon: Package },
+      on_the_way: { color: 'bg-purple-100 text-purple-700', icon: TrendingUp },
+      cancelled: { color: 'bg-red-100 text-red-700', icon: TrendingDown },
     };
-    const Icon = config[status]?.icon;
+    const statusConfig = config[normalizedStatus] || { color: 'bg-gray-100 text-gray-700', icon: Clock };
+    const Icon = statusConfig.icon;
+    const label = normalizedStatus
+      .split('_')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+
     return (
-      <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs ${config[status].color}`}>
+      <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs ${statusConfig.color}`}>
         {Icon && <Icon size={12} />}
-        {status.charAt(0).toUpperCase() + status.slice(1)}
+        {label}
       </span>
     );
   };
@@ -171,12 +221,12 @@ export default function DeliveryEarnings() {
   // Pagination
   const indexOfLastTransaction = currentPage * transactionsPerPage;
   const indexOfFirstTransaction = indexOfLastTransaction - transactionsPerPage;
-  const currentTransactions = transactions.slice(indexOfFirstTransaction, indexOfLastTransaction);
-  const totalPages = Math.ceil(transactions.length / transactionsPerPage);
+  const currentTransactions = liveTransactions.slice(indexOfFirstTransaction, indexOfLastTransaction);
+  const totalPages = Math.max(1, Math.ceil(liveTransactions.length / transactionsPerPage));
 
   // Calculate trend
   const previousWeekEarnings = 4850;
-  const trend = ((earnings.week - previousWeekEarnings) / previousWeekEarnings * 100).toFixed(1);
+  const trend = ((liveEarnings.week - previousWeekEarnings) / previousWeekEarnings * 100).toFixed(1);
 
   return (
     <SuperLayout>
@@ -212,19 +262,19 @@ export default function DeliveryEarnings() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
               <div className="bg-white/10 rounded-xl p-3 backdrop-blur-sm border border-white/20">
                 <p className="text-xs text-emerald-100">Withdrawable</p>
-                <p className="text-xl font-bold">₹{earnings.withdrawable}</p>
+                <p className="text-xl font-bold">₹{liveEarnings.withdrawable}</p>
               </div>
               <div className="bg-white/10 rounded-xl p-3 backdrop-blur-sm border border-white/20">
                 <p className="text-xs text-emerald-100">Pending</p>
-                <p className="text-xl font-bold">₹{earnings.pending}</p>
+                <p className="text-xl font-bold">₹{liveEarnings.pending}</p>
               </div>
               <div className="bg-white/10 rounded-xl p-3 backdrop-blur-sm border border-white/20">
                 <p className="text-xs text-emerald-100">This Month</p>
-                <p className="text-xl font-bold">₹{earnings.month}</p>
+                <p className="text-xl font-bold">₹{liveEarnings.month}</p>
               </div>
               <div className="bg-white/10 rounded-xl p-3 backdrop-blur-sm border border-white/20">
                 <p className="text-xs text-emerald-100">Lifetime</p>
-                <p className="text-xl font-bold">₹{earnings.total}</p>
+                <p className="text-xl font-bold">₹{liveEarnings.total}</p>
               </div>
             </div>
           </div>
@@ -243,7 +293,7 @@ export default function DeliveryEarnings() {
               </span>
             </div>
             <p className="text-sm text-gray-500 mb-1">Today's Earnings</p>
-            <p className="text-3xl font-bold text-gray-900 mb-2">₹{earnings.today}</p>
+            <p className="text-3xl font-bold text-gray-900 mb-2">₹{liveEarnings.today}</p>
             <div className="flex items-center gap-2 text-sm">
               <div className="flex items-center gap-1 text-emerald-600">
                 <TrendingUp size={16} />
@@ -278,7 +328,7 @@ export default function DeliveryEarnings() {
               </div>
             </div>
             <p className="text-sm text-gray-500 mb-1">This Week</p>
-            <p className="text-3xl font-bold text-gray-900 mb-2">₹{earnings.week}</p>
+            <p className="text-3xl font-bold text-gray-900 mb-2">₹{liveEarnings.week}</p>
             <p className="text-xs text-gray-500">vs ₹{previousWeekEarnings} last week</p>
           </div>
 
@@ -297,7 +347,7 @@ export default function DeliveryEarnings() {
                 </button>
               </div>
               <p className="text-sm text-emerald-100 mb-1">Available Balance</p>
-              <p className="text-4xl font-bold mb-4">₹{earnings.withdrawable}</p>
+              <p className="text-4xl font-bold mb-4">₹{liveEarnings.withdrawable}</p>
               <div className="flex items-center gap-4 text-sm text-emerald-100">
                 <div className="flex items-center gap-1">
                   <Shield size={14} />
@@ -344,7 +394,7 @@ export default function DeliveryEarnings() {
           {/* Chart Area */}
           {showChart && (
             <div className="h-64 flex items-end justify-between gap-2">
-              {weeklyData.map((data, index) => (
+              {liveWeeklyData.map((data, index) => (
                 <div key={index} className="flex-1 flex flex-col items-center gap-2 group">
                   <div className="relative w-full">
                     <div 
@@ -385,7 +435,7 @@ export default function DeliveryEarnings() {
               <div className="flex items-center gap-4">
                 <h2 className="text-lg font-semibold text-gray-800">Transaction History</h2>
                 <span className="bg-emerald-100 text-emerald-600 text-xs font-medium px-2.5 py-1 rounded-full">
-                  {transactions.length} transactions
+                  {liveTransactions.length} transactions
                 </span>
               </div>
               <div className="flex items-center gap-2">
@@ -462,10 +512,22 @@ export default function DeliveryEarnings() {
             </table>
           </div>
 
+          {liveTransactions.length === 0 && (
+            <div className="px-6 py-12 text-center">
+              <Receipt className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+              <h3 className="text-sm font-semibold text-gray-800">
+                {isLoading ? 'Loading transactions...' : 'No transactions found'}
+              </h3>
+              <p className="text-sm text-gray-500 mt-1">
+                {apiError || (isLoading ? 'Fetching earnings from backend.' : 'Completed deliveries will appear here.')}
+              </p>
+            </div>
+          )}
+
           {/* Pagination */}
           <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between">
             <p className="text-sm text-gray-500">
-              Showing {indexOfFirstTransaction + 1} to {Math.min(indexOfLastTransaction, transactions.length)} of {transactions.length} transactions
+              Showing {indexOfFirstTransaction + 1} to {Math.min(indexOfLastTransaction, liveTransactions.length)} of {liveTransactions.length} transactions
             </p>
             <div className="flex items-center gap-2">
               <button
@@ -477,7 +539,7 @@ export default function DeliveryEarnings() {
               >
                 <ChevronLeft size={18} />
               </button>
-              {[...Array(totalPages)].map((_, i) => (
+              {[...Array(Math.max(totalPages, 1))].map((_, i) => (
                 <button
                   key={i + 1}
                   onClick={() => setCurrentPage(i + 1)}
@@ -515,7 +577,7 @@ export default function DeliveryEarnings() {
             </div>
             
             <div className="space-y-3">
-              {bonuses.map((bonus, index) => (
+              {liveBonuses.map((bonus, index) => (
                 <div key={index} className="flex items-center justify-between p-3 bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl border border-amber-100">
                   <div>
                     <p className="text-sm font-medium text-gray-800">{bonus.type}</p>
@@ -580,7 +642,7 @@ export default function DeliveryEarnings() {
                 <span className="text-sm">Quick Withdraw</span>
                 <Zap size={16} />
               </div>
-              <p className="text-2xl font-bold mb-2">₹{earnings.withdrawable}</p>
+              <p className="text-2xl font-bold mb-2">₹{liveEarnings.withdrawable}</p>
               <button className="w-full bg-white/20 hover:bg-white/30 py-2 rounded-lg text-sm font-medium backdrop-blur-sm transition-colors">
                 Withdraw Now
               </button>

@@ -11,62 +11,125 @@ exports.initSocket = (server) => {
   });
 
   io.on("connection", (socket) => {
-    console.log("🟢 User Connected:", socket.id);
+    console.log("Socket connected:", socket.id);
+    let connectedDeliveryPartnerId = null;
 
-    // Join user room
     socket.on("joinUserRoom", (userId) => {
       socket.join(`user_${userId}`);
     });
 
-    // Join restaurant room
     socket.on("joinRestaurantRoom", (restaurantId) => {
       socket.join(`restaurant_${restaurantId}`);
     });
 
-    // Join delivery partner room
     socket.on("joinDeliveryRoom", (partnerId) => {
+      connectedDeliveryPartnerId = Number(partnerId);
       socket.join(`delivery_${partnerId}`);
     });
 
+    socket.on("registerDeliveryPartner", (partnerId) => {
+      connectedDeliveryPartnerId = Number(partnerId);
+      socket.join(`delivery_${partnerId}`);
+    });
+
+    socket.on("joinAdminRoom", () => {
+      socket.join("admin");
+    });
+
     socket.on("disconnect", () => {
-      console.log("🔴 User Disconnected:", socket.id);
+      console.log("Socket disconnected:", socket.id);
+      if (connectedDeliveryPartnerId) {
+        const { handlePartnerDisconnected } = require("../services/deliveryAssignment.service");
+        handlePartnerDisconnected(connectedDeliveryPartnerId).catch((error) => {
+          console.error("Delivery disconnect handling failed:", error.message);
+        });
+      }
     });
   });
 
   return io;
 };
 
-// Emit functions
 exports.emitOrderCreated = (order) => {
   if (!io) return;
-
-  // Notify restaurant
-  io.to(`restaurant_${order.restaurantId}`).emit(
-    "newOrder",
-    order
-  );
-
-  // Notify customer
-  io.to(`user_${order.userId}`).emit(
-    "orderPlaced",
-    order
-  );
+  io.to(`restaurant_${order.restaurantId}`).emit("newOrder", order);
+  io.to(`user_${order.userId}`).emit("orderPlaced", order);
 };
 
 exports.emitOrderStatusUpdate = (order) => {
   if (!io) return;
+  io.to(`user_${order.userId}`).emit("orderStatusUpdated", order);
+  io.to(`restaurant_${order.restaurantId}`).emit("orderStatusUpdated", order);
 
-  // Notify customer
-  io.to(`user_${order.userId}`).emit(
-    "orderStatusUpdated",
-    order
-  );
-
-  // Notify delivery
   if (order.deliveryPartnerId) {
-    io.to(`delivery_${order.deliveryPartnerId}`).emit(
-      "deliveryUpdate",
-      order
-    );
+    io.to(`delivery_${order.deliveryPartnerId}`).emit("deliveryUpdate", order);
   }
+};
+
+exports.emitDeliveryLocationUpdate = (order) => {
+  if (!io || !order) return;
+
+  const payload = {
+    orderId: order.id,
+    restaurantId: order.restaurantId,
+    userId: order.userId,
+    deliveryPartnerId: order.deliveryPartnerId,
+    deliveryLat: order.deliveryLat,
+    deliveryLng: order.deliveryLng,
+    status: order.status,
+    deliveryStatus: order.deliveryStatus,
+    updatedAt: new Date().toISOString(),
+  };
+
+  io.to(`user_${order.userId}`).emit("deliveryLocationUpdated", payload);
+  io.to(`restaurant_${order.restaurantId}`).emit("deliveryLocationUpdated", payload);
+
+  if (order.deliveryPartnerId) {
+    io.to(`delivery_${order.deliveryPartnerId}`).emit("deliveryLocationUpdated", payload);
+  }
+};
+
+exports.emitDeliveryRequest = (partnerId, payload) => {
+  if (!io) return;
+  io.to(`delivery_${partnerId}`).emit("deliveryAssignmentRequest", payload);
+};
+
+exports.emitDeliveryRequestExpired = (partnerId, payload) => {
+  if (!io) return;
+  io.to(`delivery_${partnerId}`).emit("deliveryAssignmentExpired", payload);
+};
+
+exports.emitDeliveryRequestRejected = (partnerId, payload) => {
+  if (!io) return;
+  io.to(`delivery_${partnerId}`).emit("deliveryAssignmentRejected", payload);
+};
+
+exports.emitDeliveryAssigned = (order, partner) => {
+  if (!io) return;
+
+  const payload = {
+    orderId: order.id,
+    deliveryPartnerId: partner.id,
+    deliveryPartnerName: partner.name,
+    status: order.status,
+    deliveryStatus: order.deliveryStatus,
+  };
+
+  io.to(`restaurant_${order.restaurantId}`).emit("deliveryAssigned", payload);
+  io.to(`user_${order.userId}`).emit("deliveryAssigned", payload);
+  io.to(`delivery_${partner.id}`).emit("deliveryAssignmentAccepted", payload);
+};
+
+exports.emitDeliveryNotAssigned = (order) => {
+  if (!io) return;
+
+  const payload = {
+    orderId: order.id,
+    restaurantId: order.restaurantId,
+    deliveryStatus: order.deliveryStatus,
+    message: "No delivery partner accepted this order",
+  };
+
+  io.to(`restaurant_${order.restaurantId}`).emit("deliveryNotAssigned", payload);
+  io.to("admin").emit("deliveryNotAssigned", payload);
 };

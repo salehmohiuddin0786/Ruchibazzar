@@ -1,6 +1,152 @@
 const bcrypt = require("bcryptjs");
+const axios = require("axios");
 const { User, DeliveryPartner } = require("../models");
 const generateToken = require("../utils/generateToken");
+
+const lookupFirebaseUser = async (idToken) => {
+  const apiKey = process.env.FIREBASE_WEB_API_KEY;
+
+  if (!apiKey) {
+    const error = new Error("Firebase API key missing");
+    error.statusCode = 500;
+    throw error;
+  }
+
+  if (!idToken) {
+    const error = new Error("Firebase verification token is required");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  try {
+    const response = await axios.post(
+      `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${apiKey}`,
+      { idToken },
+      { headers: { "Content-Type": "application/json" } }
+    );
+
+    const firebaseUser = response.data?.users?.[0];
+
+    if (!firebaseUser) {
+      const error = new Error("Firebase user not found");
+      error.statusCode = 401;
+      throw error;
+    }
+
+    return firebaseUser;
+  } catch (error) {
+    if (error.statusCode) throw error;
+
+    const firebaseError = new Error(
+      error.response?.data?.error?.message || "Firebase verification failed"
+    );
+    firebaseError.statusCode = error.response?.status || 401;
+    throw firebaseError;
+  }
+};
+
+const verifyFirebaseGoogleToken = async (idToken) => {
+  const firebaseUser = await lookupFirebaseUser(idToken);
+  const providerIds = (firebaseUser.providerUserInfo || []).map(
+    (provider) => provider.providerId
+  );
+
+  if (!providerIds.includes("google.com")) {
+    const error = new Error("Google verification failed");
+    error.statusCode = 401;
+    throw error;
+  }
+
+  if (!firebaseUser.email) {
+    const error = new Error("Google account email is required");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return firebaseUser;
+};
+
+const findDeliveryPartnerForUser = async (user) => {
+  if (user.email) {
+    const partnerByEmail = await DeliveryPartner.findOne({
+      where: { email: user.email },
+    });
+
+    if (partnerByEmail) return partnerByEmail;
+  }
+
+  return DeliveryPartner.findOne({
+    where: { phone: user.phone },
+  });
+};
+
+const listDeliveryPartners = async (req, res) => {
+  try {
+    const partnerProfiles = await DeliveryPartner.findAll({
+      where: {
+        isActive: true,
+      },
+      attributes: [
+        "id",
+        "name",
+        "phone",
+        "email",
+        "isAvailable",
+        "rating",
+        "totalDeliveries",
+        "vehicleType",
+      ],
+      order: [
+        ["isAvailable", "DESC"],
+        ["name", "ASC"],
+      ],
+    });
+
+    const partners = await Promise.all(
+      partnerProfiles.map(async (partner) => {
+        const linkedUser = await findLinkedUserForPartner(partner);
+
+        return {
+          id: partner.id,
+          userId: linkedUser?.id || null,
+          name: partner.name,
+          phone: partner.phone,
+          email: partner.email,
+          isAvailable: Boolean(linkedUser?.isAvailable ?? partner.isAvailable),
+          rating: linkedUser?.rating || partner.rating,
+          totalDeliveries: linkedUser?.totalDeliveries || partner.totalDeliveries,
+          vehicleType: partner.vehicleType,
+        };
+      })
+    );
+
+    return res.status(200).json({
+      success: true,
+      partners,
+    });
+  } catch (error) {
+    console.error("LIST DELIVERY PARTNERS ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to load delivery partners",
+    });
+  }
+};
+
+const findLinkedUserForPartner = async (partner) => {
+  if (partner.email) {
+    const byEmail = await User.findOne({
+      where: { email: partner.email, role: "partner", isActive: true },
+    });
+
+    if (byEmail) return byEmail;
+  }
+
+  return User.findOne({
+    where: { phone: partner.phone, role: "partner", isActive: true },
+  });
+};
 
 /*
 ---------------------------------------
@@ -14,6 +160,7 @@ const registerDeliveryPartner = async (req, res) => {
       email,
       phone,
       password,
+      firebaseIdToken,
 
       dob,
       age,
@@ -46,11 +193,38 @@ const registerDeliveryPartner = async (req, res) => {
       emergencyContact,
     } = req.body;
 
-    if (!name || !phone || !password) {
+    const isGoogleRegistration = !!firebaseIdToken;
+
+    if (!name || !phone) {
       return res.status(400).json({
         success: false,
-        message: "Name, phone and password are required",
+        message: "Name and phone are required",
       });
+    }
+
+    if (!password && !isGoogleRegistration) {
+      return res.status(400).json({
+        success: false,
+        message: "Password is required",
+      });
+    }
+
+    if (isGoogleRegistration) {
+      const firebaseUser = await verifyFirebaseGoogleToken(firebaseIdToken);
+
+      if (!email) {
+        return res.status(400).json({
+          success: false,
+          message: "Google account email is required",
+        });
+      }
+
+      if (String(firebaseUser.email || "").toLowerCase() !== String(email).toLowerCase()) {
+        return res.status(400).json({
+          success: false,
+          message: "Google account email does not match registration email",
+        });
+      }
     }
 
     if (email) {
@@ -73,7 +247,7 @@ const registerDeliveryPartner = async (req, res) => {
       });
     }
 
-    if (password.length < 6) {
+    if (password && password.length < 6) {
       return res.status(400).json({
         success: false,
         message: "Password must be at least 6 characters",
@@ -128,7 +302,7 @@ const registerDeliveryPartner = async (req, res) => {
       }
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = password ? await bcrypt.hash(password, 10) : null;
 
     const user = await User.create({
       name: name.trim(),
@@ -138,11 +312,11 @@ const registerDeliveryPartner = async (req, res) => {
       role: "partner",
       isAvailable: false,
       isActive: true,
+      isVerified: true,
+      authProvider: isGoogleRegistration ? "google" : "password",
     });
 
     const partner = await DeliveryPartner.create({
-      userId: user.id,
-
       name: name.trim(),
       phone,
       email: email ? email.trim() : null,
@@ -246,6 +420,13 @@ const loginDeliveryPartner = async (req, res) => {
       });
     }
 
+    if (!user.password) {
+      return res.status(400).json({
+        success: false,
+        message: "Please login with Google",
+      });
+    }
+
     const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch) {
@@ -255,9 +436,7 @@ const loginDeliveryPartner = async (req, res) => {
       });
     }
 
-    const partner = await DeliveryPartner.findOne({
-      where: { userId: user.id },
-    });
+    const partner = await findDeliveryPartnerForUser(user);
 
     const token = generateToken(user.id);
 
@@ -290,7 +469,72 @@ const loginDeliveryPartner = async (req, res) => {
 📦 EXPORTS
 ---------------------------------------
 */
+const googleLoginDeliveryPartner = async (req, res) => {
+  try {
+    const { firebaseIdToken } = req.body || {};
+    const firebaseUser = await verifyFirebaseGoogleToken(firebaseIdToken);
+    const email = String(firebaseUser.email || "").toLowerCase();
+
+    const user = await User.findOne({
+      where: { email, role: "partner" },
+    });
+
+    if (!user) {
+      return res.status(403).json({
+        success: false,
+        message: "No delivery partner account found for this Google email",
+      });
+    }
+
+    if (!user.isActive) {
+      return res.status(403).json({
+        success: false,
+        message: "Account is blocked",
+      });
+    }
+
+    const partner = await findDeliveryPartnerForUser(user);
+
+    if (!partner) {
+      return res.status(403).json({
+        success: false,
+        message: "This Google account is not registered as a delivery partner",
+      });
+    }
+
+    user.name = user.name || firebaseUser.displayName || email.split("@")[0];
+    user.isVerified = true;
+    user.authProvider = user.authProvider || "google";
+    await user.save();
+
+    const token = generateToken(user.id);
+
+    return res.status(200).json({
+      success: true,
+      message: "Google login successful",
+      token,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+      },
+      partner,
+    });
+  } catch (error) {
+    console.error("DELIVERY GOOGLE LOGIN ERROR:", error);
+
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Google login failed",
+    });
+  }
+};
+
 module.exports = {
   registerDeliveryPartner,
   loginDeliveryPartner,
+  googleLoginDeliveryPartner,
+  listDeliveryPartners,
 };

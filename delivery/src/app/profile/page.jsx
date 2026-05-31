@@ -1,8 +1,9 @@
 // app/delivery/profile/page.jsx
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import SuperLayout from "../SuperLayout/page";
+import { deliveryApi } from "../lib/deliveryApi";
 import {
   User,
   Phone,
@@ -29,34 +30,55 @@ import {
 
 export default function DeliveryPartnerProfile() {
   const [isOnline, setIsOnline] = useState(true);
+  const [profile, setProfile] = useState(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    deliveryApi("/delivery/profile")
+      .then((data) => {
+        if (!mounted) return;
+        setProfile(data);
+        setIsOnline(Boolean(data.stats?.isAvailable));
+      })
+      .catch(() => {});
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const user = profile?.user;
+  const partnerProfile = profile?.partner;
+  const profileStats = profile?.stats;
 
   const partner = {
-    name: "Rahul Sharma",
-    partnerId: "DP-1024",
-    phone: "+91 98765 43210",
-    email: "rahul.delivery@ruchibazzar.com",
-    address: "Adilabad, Telangana",
-    joiningDate: "15 Jan 2024",
-    rating: 4.9,
-    totalDeliveries: 1247,
-    onlineHours: 328,
-    earnings: 124750,
+    name: user?.name || partnerProfile?.name || "Delivery Partner",
+    partnerId: `DP-${user?.id || partnerProfile?.id || "1024"}`,
+    phone: user?.phone || partnerProfile?.phone || "",
+    email: user?.email || partnerProfile?.email || "",
+    address: partnerProfile?.address || [partnerProfile?.city, partnerProfile?.pincode].filter(Boolean).join(" ") || "Address not available",
+    joiningDate: user?.createdAt ? new Date(user.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "15 Jan 2024",
+    rating: profileStats?.rating || 5,
+    totalDeliveries: profileStats?.totalDeliveries || 0,
+    onlineHours: profileStats?.onlineHours || 0,
+    earnings: profileStats?.totalEarnings || 0,
     profileCompletion: 92,
   };
 
   const vehicle = {
-    type: "Bike",
-    number: "TS 01 AB 1234",
-    model: "Honda Activa",
-    license: "DL-2024-987654",
-    insurance: "Valid till Dec 2026",
+    type: partnerProfile?.vehicleType || "Bike",
+    number: partnerProfile?.vehicleRegistrationNumber || partnerProfile?.vehicleNumber || "Not added",
+    model: partnerProfile?.vehicleType || "Not added",
+    license: partnerProfile?.drivingLicenseNumber || "Not added",
+    insurance: partnerProfile?.vehicleInsurance || "Not added",
   };
 
   const bank = {
-    accountName: "Rahul Sharma",
-    bankName: "HDFC Bank",
+    accountName: partnerProfile?.accountHolderName || partner.name,
+    bankName: "Bank account",
     accountNumber: "•••• •••• 1234",
-    upi: "rahul@okhdfcbank",
+    upi: partnerProfile?.upiId || "Not added",
   };
 
   const documents = [
@@ -123,7 +145,14 @@ export default function DeliveryPartnerProfile() {
 
             <div className="flex gap-3">
               <button
-                onClick={() => setIsOnline(!isOnline)}
+                onClick={() => {
+                  const next = !isOnline;
+                  setIsOnline(next);
+                  deliveryApi("/delivery/availability", {
+                    method: "PUT",
+                    body: JSON.stringify({ isAvailable: next }),
+                  }).catch(() => setIsOnline(!next));
+                }}
                 className={`px-5 py-3 rounded-xl text-sm font-medium transition-all ${
                   isOnline
                     ? "bg-white text-emerald-600"

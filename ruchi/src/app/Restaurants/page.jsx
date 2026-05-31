@@ -14,6 +14,7 @@ import {
 
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
+import { getMediaUrl } from "../utils/media";
 
 const RestaurantsPage = () => {
   const router = useRouter();
@@ -57,10 +58,38 @@ const RestaurantsPage = () => {
   };
 
   const getImageUrl = (restaurant) => {
-    const image = restaurant.coverImage || restaurant.logo || restaurant.image;
-    if (!image) return null;
-    if (image.startsWith("http")) return image;
-    return `${IMAGE_BASE}${image}`;
+    const image =
+      restaurant.logo ||
+      restaurant.image ||
+      restaurant.coverImage ||
+      restaurant.outletPhotos?.[0];
+
+    if (!image) return "";
+
+    const value = String(image).trim();
+
+  // ✅ base64 image support
+    if (value.startsWith("data:image")) {
+      return value;
+    }
+
+    return getMediaUrl(value, API_BASE);
+  };
+
+  const formatMoney = (value, fallbackValue = 0) => {
+    const amount = Number(value);
+    const safeAmount = Number.isFinite(amount) ? amount : fallbackValue;
+    return `${currencySymbol}${safeAmount}`;
+  };
+
+  const getPriceRange = (restaurant) => {
+    if (restaurant.priceRange) return restaurant.priceRange;
+
+    const minimumOrderValue = Number(restaurant.minimumOrderValue);
+    if (!Number.isFinite(minimumOrderValue)) return `${currencySymbol}${currencySymbol}`;
+    if (minimumOrderValue <= 150) return currencySymbol;
+    if (minimumOrderValue <= 300) return `${currencySymbol}${currencySymbol}`;
+    return `${currencySymbol}${currencySymbol}${currencySymbol}`;
   };
 
   const fetchRestaurants = async () => {
@@ -93,16 +122,12 @@ const RestaurantsPage = () => {
         rating: restaurant.rating || 4.5,
         reviewCount: restaurant.reviewCount || Math.floor(Math.random() * 1000) + 100,
         deliveryTime: restaurant.deliveryTime || "25-35 min",
-        deliveryFee: restaurant.deliveryFee
-          ? `${currencySymbol}${restaurant.deliveryFee}`
-          : `${currencySymbol}0`,
-        minOrder: restaurant.minimumOrderValue
-          ? `${currencySymbol}${restaurant.minimumOrderValue}`
-          : `${currencySymbol}99`,
+        deliveryFee: formatMoney(restaurant.deliveryFee, 0),
+        minOrder: formatMoney(restaurant.minimumOrderValue, 99),
         tags: Array.isArray(restaurant.cuisines)
           ? restaurant.cuisines.slice(0, 3)
           : ["Fresh", "Quality"],
-        priceRange: restaurant.priceRange || `${currencySymbol}${currencySymbol}`,
+        priceRange: getPriceRange(restaurant),
         distance: restaurant.distance || `${(Math.random() * 3 + 0.5).toFixed(1)} km`,
         featured: restaurant.featured || false,
         offers: restaurant.offers || ["Special Offer"],
@@ -592,6 +617,10 @@ const RestaurantsPage = () => {
                           hoveredCard === restaurant.id ? "scale-110" : "scale-100"
                         } ${loadedImages[restaurant.id] ? "opacity-100" : "opacity-0"}`}
                         onLoad={() => handleImageLoad(restaurant.id)}
+                        onError={(event) => {
+                          console.log("Image not loading:", restaurant.imageUrl);
+                          handleImageLoad(restaurant.id);
+                        }}
                       />
                     </>
                   ) : (

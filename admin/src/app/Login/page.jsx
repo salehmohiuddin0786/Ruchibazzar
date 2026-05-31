@@ -12,7 +12,22 @@ import {
   Shield,
   Utensils,
   Crown,
+  Chrome,
 } from "lucide-react";
+import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
+import { auth } from "../firebase";
+
+const parseApiResponse = async (response) => {
+  const text = await response.text();
+
+  if (!text) return {};
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { message: text };
+  }
+};
 
 const Login = () => {
   const router = useRouter();
@@ -24,14 +39,15 @@ const Login = () => {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState("");
 
   const redirectByRole = useCallback(
     (role) => {
-      if (role === "admin") router.push("/admin/dashboard");
-      else if (role === "partner") router.push("/");
-      else router.push("/");
+      if (role === "admin") router.replace("/Dashboard");
+      else if (role === "partner") router.replace("/");
+      else router.replace("/");
     },
     [router]
   );
@@ -43,8 +59,18 @@ const Login = () => {
           localStorage.getItem("token") || sessionStorage.getItem("token");
         const user =
           localStorage.getItem("user") || sessionStorage.getItem("user");
+        const restaurant =
+          localStorage.getItem("restaurant") ||
+          sessionStorage.getItem("restaurant");
 
         if (token && user) {
+          localStorage.setItem("token", token);
+          localStorage.setItem("user", user);
+          if (restaurant) localStorage.setItem("restaurant", restaurant);
+          sessionStorage.removeItem("token");
+          sessionStorage.removeItem("user");
+          sessionStorage.removeItem("restaurant");
+
           const userData = JSON.parse(user);
           redirectByRole(userData.role);
           return;
@@ -98,13 +124,11 @@ const Login = () => {
     sessionStorage.removeItem("user");
     sessionStorage.removeItem("restaurant");
 
-    const storage = rememberMe ? localStorage : sessionStorage;
-
-    storage.setItem("token", data.token);
-    storage.setItem("user", JSON.stringify(userData));
+    localStorage.setItem("token", data.token);
+    localStorage.setItem("user", JSON.stringify(userData));
 
     if (data.restaurant) {
-      storage.setItem("restaurant", JSON.stringify(data.restaurant));
+      localStorage.setItem("restaurant", JSON.stringify(data.restaurant));
     }
 
     const maxAge = rememberMe ? 2592000 : 3600;
@@ -143,7 +167,7 @@ const Login = () => {
         }),
       });
 
-      const data = await response.json();
+      const data = await parseApiResponse(response);
 
       if (!response.ok) {
         throw new Error(data.message || "Login failed");
@@ -162,6 +186,50 @@ const Login = () => {
       console.error("Login error:", err);
       setError(err.message || "Invalid email or password");
       setIsLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    if (isLoading || isGoogleLoading) return;
+
+    setError("");
+
+    try {
+      setIsGoogleLoading(true);
+
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: "select_account" });
+      const firebaseResult = await signInWithPopup(auth, provider);
+      const firebaseIdToken = await firebaseResult.user.getIdToken();
+
+      const response = await fetch("http://localhost:5000/api/auth/google-portal", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({ firebaseIdToken }),
+      });
+
+      const data = await parseApiResponse(response);
+
+      if (!response.ok) {
+        throw new Error(data.message || "Google login failed");
+      }
+
+      if (!data.token || !data.user) {
+        throw new Error("Invalid login response from server");
+      }
+
+      saveAuthData(data);
+      redirectTimeoutRef.current = setTimeout(() => {
+        redirectByRole(data.user.role);
+      }, 100);
+    } catch (err) {
+      console.error("Google login error:", err);
+      setError(err.message || "Google login failed");
+    } finally {
+      setIsGoogleLoading(false);
     }
   };
 
@@ -293,13 +361,40 @@ const Login = () => {
 
             <button
               type="submit"
-              disabled={isLoading}
+              disabled={isLoading || isGoogleLoading}
               className="w-full bg-gradient-to-r from-red-600 to-black text-white font-semibold py-3 px-4 rounded-xl transition-all hover:scale-[1.02] disabled:opacity-60 disabled:hover:scale-100"
             >
               <span className="flex items-center justify-center gap-2">
                 {isLoading ? "Signing in..." : "Sign In"}
                 {!isLoading && <ArrowRight size={20} />}
               </span>
+            </button>
+
+            <div className="relative mt-8">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-red-500/20"></div>
+              </div>
+              <div className="relative flex justify-center text-sm">
+                <span className="px-4 bg-transparent text-red-300">
+                  or
+                </span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleGoogleLogin}
+              disabled={isLoading || isGoogleLoading}
+              className="w-full border-2 border-red-500/50 text-red-200 font-semibold py-3 px-4 rounded-xl hover:bg-red-600/20 hover:border-red-500 disabled:opacity-60 flex items-center justify-center gap-2"
+            >
+              {isGoogleLoading ? (
+                "Connecting..."
+              ) : (
+                <>
+                  <Chrome size={20} />
+                  Continue with Google
+                </>
+              )}
             </button>
 
             <div className="relative mt-8">

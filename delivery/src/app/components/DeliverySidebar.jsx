@@ -87,6 +87,16 @@ export default function DeliverySidebar({ isOpen, setIsOpen, isMobile }) {
   }, [hoverTimeout]);
 
   const isActive = (path) => pathname === path;
+  const handleLogout = () => {
+    localStorage.removeItem("deliveryToken");
+    localStorage.removeItem("deliveryUser");
+    localStorage.removeItem("deliveryPartner");
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    localStorage.removeItem("partnerToken");
+    document.cookie = "deliveryToken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+    window.location.href = "/login";
+  };
 
   return (
     <>
@@ -372,7 +382,7 @@ export default function DeliverySidebar({ isOpen, setIsOpen, isMobile }) {
                       className="p-1.5 hover:bg-emerald-100 dark:hover:bg-gray-700 rounded-lg transition-all"
                       onClick={(e) => {
                         e.stopPropagation();
-                        // Handle logout
+                        handleLogout();
                       }}
                     >
                       <LogOut size={14} className="text-emerald-600 dark:text-emerald-400" />

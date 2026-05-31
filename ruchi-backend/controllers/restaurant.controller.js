@@ -69,6 +69,36 @@ const getMultipleFilePaths = (req, fieldName) => {
   );
 };
 
+const saveDataUrlImage = (value, prefix = "restaurant") => {
+  if (!value || typeof value !== "string") return null;
+
+  const match = value.match(/^data:image\/(png|jpe?g|webp);base64,(.+)$/i);
+  if (!match) return null;
+
+  const extension = match[1].toLowerCase() === "jpeg" ? "jpg" : match[1].toLowerCase();
+  const base64 = match[2];
+
+  try {
+    const buffer = Buffer.from(base64, "base64");
+    if (!buffer.length) return null;
+
+    const filename = `${Date.now()}-${Math.round(Math.random() * 1e9)}-${prefix}.${extension}`;
+    const filePath = path.join(uploadDir, filename);
+    fs.writeFileSync(filePath, buffer);
+
+    return `/uploads/restaurants/${filename}`;
+  } catch {
+    return null;
+  }
+};
+
+const keepPathOrUrl = (value) => {
+  if (!value || typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.startsWith("data:image/")) return null;
+  return trimmed;
+};
+
 const parseBoolean = (value) => {
   return (
     value === true ||
@@ -142,14 +172,16 @@ const buildRestaurantData = (req, oldRestaurant = null) => {
 
     logo:
       getFilePath(req, "logo") ||
-      body.image ||
-      body.logo ||
+      saveDataUrlImage(body.logo || body.image, "logo") ||
+      keepPathOrUrl(body.image) ||
+      keepPathOrUrl(body.logo) ||
       oldRestaurant?.logo ||
       null,
 
     coverImage:
       getFilePath(req, "coverImage") ||
-      body.coverImage ||
+      saveDataUrlImage(body.coverImage, "cover") ||
+      keepPathOrUrl(body.coverImage) ||
       oldRestaurant?.coverImage ||
       null,
 

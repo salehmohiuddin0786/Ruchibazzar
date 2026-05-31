@@ -5,6 +5,7 @@ const orderController = require("../controllers/order.controller");
 const deliveryController = require("../controllers/delivery.controller");
 
 const { protect, authorize } = require("../middlewares/auth.middleware");
+const { validateOrderAssignmentParam } = require("../middlewares/deliveryAssignment.middleware");
 
 /*
 ---------------------------------------
@@ -46,6 +47,8 @@ router.put(
 
 router.put("/:id/assign", protect, authorize("admin"), deliveryController.assignDeliveryPartner);
 router.get("/delivery/my-orders", protect, authorize("partner"), deliveryController.getMyDeliveries);
+router.post("/:id/delivery/accept", protect, authorize("partner", "delivery"), validateOrderAssignmentParam, deliveryController.acceptAssignment);
+router.post("/:id/delivery/reject", protect, authorize("partner", "delivery"), validateOrderAssignmentParam, deliveryController.rejectAssignment);
 router.put("/:id/pick", protect, authorize("partner"), deliveryController.pickOrder);
 router.put("/:id/start", protect, authorize("partner"), deliveryController.startDelivery);
 router.put("/:id/deliver", protect, authorize("partner"), deliveryController.completeDelivery);

@@ -30,6 +30,7 @@ import {
 import { FaMoneyBillWave } from "react-icons/fa";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
+import { getMediaUrl, hideBrokenImage } from "../utils/media";
 
 const steps = ["Cart Review", "Delivery Details", "Payment", "Confirmation"];
 
@@ -254,6 +255,7 @@ const CheckoutPage = () => {
   const [showMapModal, setShowMapModal] = useState(false);
 
   const [cartItems, setCartItems] = useState([]);
+  const [savedAddresses, setSavedAddresses] = useState([]);
 
   const [appliedPromo, setAppliedPromo] = useState(null);
   const [promoDiscount, setPromoDiscount] = useState(0);
@@ -323,6 +325,60 @@ const CheckoutPage = () => {
       }
     }
     return null;
+  };
+
+  const fillAddressFromSaved = (address) => {
+    setDeliveryDetails((prev) => ({
+      ...prev,
+      houseNo: "",
+      landmark: address.landmark || "",
+      streetAddress: address.street || "",
+      finalAddress: cleanAddressParts([
+        address.street,
+        address.landmark ? `Landmark: ${address.landmark}` : "",
+        address.city,
+        address.state,
+        address.zipCode,
+      ]).join(", "),
+      contactNumber: address.phone || prev.contactNumber,
+      contactName: address.contactName || prev.contactName,
+      colonyName: address.landmark || "",
+      areaName: "",
+      cityName: address.city || "",
+      stateName: address.state || "",
+      pincode: address.zipCode || "",
+      latitude: address.latitude || null,
+      longitude: address.longitude || null,
+    }));
+
+    setValidationErrors((prev) => ({
+      ...prev,
+      streetAddress: "",
+      contactName: "",
+      contactNumber: "",
+    }));
+  };
+
+  const fetchSavedAddresses = async () => {
+    const token = getAuthToken();
+    if (!token) return;
+
+    try {
+      const response = await fetch(`${apiUrl}/users/addresses`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!response.ok) return;
+
+      const data = await response.json();
+      const list = Array.isArray(data) ? data : data.addresses || [];
+      setSavedAddresses(list);
+
+      const defaultAddress = list.find((address) => address.isDefault) || list[0];
+      if (defaultAddress) fillAddressFromSaved(defaultAddress);
+    } catch (err) {
+      console.error("Error loading saved addresses:", err);
+    }
   };
 
   const getItemPrice = (item) => {
@@ -632,6 +688,7 @@ const CheckoutPage = () => {
       }));
     }
 
+    fetchSavedAddresses();
     fetchCart();
   }, []);
 
@@ -934,6 +991,16 @@ const CheckoutPage = () => {
         couponCode: appliedPromo?.couponCode || null,
         latitude: deliveryDetails.latitude,
         longitude: deliveryDetails.longitude,
+        savedAddress: {
+          type: "home",
+          street: deliveryDetails.finalAddress || combineAddress(),
+          city: deliveryDetails.cityName,
+          state: deliveryDetails.stateName,
+          zipCode: deliveryDetails.pincode,
+          landmark: deliveryDetails.landmark || deliveryDetails.colonyName,
+          phone: deliveryDetails.contactNumber,
+          contactName: deliveryDetails.contactName,
+        },
       };
 
       const response = await fetch(`${apiUrl}/orders`, {
@@ -1030,9 +1097,10 @@ const CheckoutPage = () => {
                       <div className="w-20 h-20 flex-shrink-0 relative rounded-xl overflow-hidden shadow-md">
                         {item.dish?.image ? (
                           <img
-                            src={`${apiUrl.replace("/api", "")}/uploads/${item.dish.image}`}
+                            src={getMediaUrl(item.dish.image, apiUrl)}
                             alt={item.dish?.name || "Dish"}
                             className="w-full h-full object-cover"
+                            onError={hideBrokenImage}
                           />
                         ) : (
                           <div className="w-full h-full bg-gradient-to-br from-orange-100 to-red-100 rounded-xl flex items-center justify-center">
@@ -1246,7 +1314,7 @@ const CheckoutPage = () => {
               <div className="flex justify-between items-center mb-2">
                 <span className="font-bold text-gray-800 text-lg">Total</span>
                 <div className="text-right">
-                  <span className="text-2xl font-bold bg-gradient-to-r from-orange-500 to-red-500 bg-clip-text text-transparent">
+                  <span className="text-2xl font-bold text-orange-600">
                     {formatINR(total)}
                   </span>
 
@@ -1339,6 +1407,40 @@ const CheckoutPage = () => {
             <div className="mb-4 p-2 bg-green-50 border border-green-200 rounded-lg text-xs text-green-700 flex items-center gap-2">
               <FiCheckCircle className="w-3 h-3" />
               Coordinates captured: {deliveryDetails.latitude}, {deliveryDetails.longitude}
+            </div>
+          )}
+
+          {savedAddresses.length > 0 && (
+            <div className="mb-5">
+              <p className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                <FiBookmark className="text-orange-500" />
+                Saved address suggestions
+              </p>
+              <div className="grid grid-cols-1 gap-3">
+                {savedAddresses.slice(0, 3).map((address) => (
+                  <button
+                    key={address.id}
+                    type="button"
+                    onClick={() => fillAddressFromSaved(address)}
+                    className="text-left rounded-xl border border-orange-100 bg-orange-50/60 p-3 hover:border-orange-300 hover:bg-orange-50 transition-colors"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-bold text-gray-900 capitalize">
+                        {address.type || "home"}
+                      </span>
+                      {address.isDefault && (
+                        <span className="rounded-full bg-orange-500 px-2 py-0.5 text-[11px] font-semibold text-white">
+                          Default
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-sm text-gray-700 line-clamp-2">{address.street}</p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      {cleanAddressParts([address.city, address.state, address.zipCode]).join(", ")}
+                    </p>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
@@ -1787,7 +1889,7 @@ const CheckoutPage = () => {
 
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 py-8 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-orange-500 to-red-500 bg-clip-text text-transparent mb-8">
+          <h1 className="text-3xl font-bold text-orange-600 mb-8">
             Checkout
           </h1>
 

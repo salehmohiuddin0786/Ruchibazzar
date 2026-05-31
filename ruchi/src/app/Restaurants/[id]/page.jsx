@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import Navbar from '../../components/Navbar';
 import Footer from '../../components/Footer';
+import { getMediaUrl, hideBrokenImage } from '../../utils/media';
 
 const RestaurantMenuPage = () => {
   const params = useParams();
@@ -29,6 +30,16 @@ const RestaurantMenuPage = () => {
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
   const currencySymbol = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || '₹';
+
+  const normalizeListResponse = (data, key) => {
+    if (Array.isArray(data)) return data;
+    if (Array.isArray(data?.[key])) return data[key];
+    if (Array.isArray(data?.data)) return data.data;
+    if (Array.isArray(data?.items)) return data.items;
+    return [];
+  };
+
+  const getDishFromCartItem = (item) => item.Dish || item.dish;
 
   // Get or create cart ID
   const getCartId = () => {
@@ -59,21 +70,22 @@ const RestaurantMenuPage = () => {
 
       const response = await fetch(`${apiUrl}/Cart/${cartId}`);
       if (response.ok) {
-        const cartItems = await response.json();
+        const cartItems = normalizeListResponse(await response.json(), "items");
         
         // Transform cart items to local state format
         const cartState = {};
         cartItems.forEach(item => {
-          if (item.Dish) {
+          const dish = getDishFromCartItem(item);
+          if (dish) {
             cartState[item.dishId] = {
               id: item.dishId,
-              name: item.Dish.name,
-              price: item.Dish.price,
+              name: dish.name,
+              price: dish.price,
               quantity: item.quantity,
-              description: item.Dish.description,
-              image: item.Dish.image,
-              category: item.Dish.category,
-              restaurantId: item.Dish.restaurantId
+              description: dish.description,
+              image: getMediaUrl(dish.image, apiUrl),
+              category: dish.category,
+              restaurantId: dish.restaurantId
             };
           }
         });
@@ -100,18 +112,31 @@ const RestaurantMenuPage = () => {
       if (!response.ok) throw new Error('Failed to fetch restaurant details');
       const data = await response.json();
       
+      const restaurantData = data.restaurant || data.data || data;
+
       // Transform restaurant data
       const transformedRestaurant = {
-        id: data.id,
-        name: data.name,
-        description: data.description,
-        address: data.address,
-        image: data.image ? `${apiUrl.replace('/api', '')}/uploads/${data.image}` : null,
-        isOpen: data.isOpen,
+        id: restaurantData.id,
+        name: restaurantData.name || 'Restaurant',
+        description:
+          restaurantData.aboutRestaurant ||
+          restaurantData.description ||
+          'Fresh food prepared with quality ingredients',
+        address: restaurantData.address || 'Location available',
+        image: getMediaUrl(
+          restaurantData.coverImage || restaurantData.logo || restaurantData.image,
+          apiUrl
+        ),
+        isOpen: restaurantData.isOpen !== undefined ? restaurantData.isOpen : true,
         rating: 4.5,
         reviewCount: 245,
-        deliveryTime: "30-40 min",
-        priceRange: "₹₹",
+        deliveryTime: restaurantData.preparationTime
+          ? `${restaurantData.preparationTime}-${restaurantData.preparationTime + 10} min`
+          : "30-40 min",
+        priceRange: restaurantData.priceRange || `${currencySymbol}${currencySymbol}`,
+        minOrder: restaurantData.minimumOrderValue
+          ? `${currencySymbol}${restaurantData.minimumOrderValue}`
+          : null,
         distance: "2.5 km",
         freeDelivery: false,
         offers: ["20% OFF on first order"]
@@ -130,13 +155,15 @@ const RestaurantMenuPage = () => {
       if (!response.ok) throw new Error('Failed to fetch dishes');
       const data = await response.json();
       
+      const dishList = normalizeListResponse(data, 'data');
+
       // Transform dishes data
-      const transformedDishes = data.data.map((dish, index) => ({
+      const transformedDishes = dishList.map((dish, index) => ({
         id: dish.id,
         name: dish.name,
         description: dish.description || 'Delicious dish prepared with fresh ingredients',
-        price: dish.price,
-        image: dish.image ? `${apiUrl.replace('/api', '')}/uploads/${dish.image}` : null,
+        price: Number(dish.price ?? dish.mrp ?? dish.salePrice ?? 0),
+        image: getMediaUrl(dish.image, apiUrl),
         category: getCategoryFromName(dish.name),
         popular: index < 3,
         spicy: dish.name.toLowerCase().includes('spicy') || Math.random() > 0.7,
@@ -244,7 +271,7 @@ const RestaurantMenuPage = () => {
       const response = await fetch(`${apiUrl}/Cart/${cartId}`);
       if (!response.ok) throw new Error('Failed to fetch cart');
       
-      const cartItems = await response.json();
+      const cartItems = normalizeListResponse(await response.json(), "items");
       const cartItem = cartItems.find(item => item.dishId === dishId);
       
       if (cartItem) {
@@ -302,7 +329,7 @@ const RestaurantMenuPage = () => {
       const response = await fetch(`${apiUrl}/Cart/${cartId}`);
       if (!response.ok) throw new Error('Failed to fetch cart');
       
-      const cartItems = await response.json();
+      const cartItems = normalizeListResponse(await response.json(), "items");
       const cartItem = cartItems.find(item => item.dishId === dishId);
       
       if (cartItem) {
@@ -414,8 +441,8 @@ const RestaurantMenuPage = () => {
               <span>Back to Restaurants</span>
             </button>
 
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-              <div>
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-8">
+              <div className="flex-1">
                 <h1 className="text-3xl md:text-4xl lg:text-5xl font-black text-white mb-4">
                   {restaurant.name}
                 </h1>
@@ -436,6 +463,12 @@ const RestaurantMenuPage = () => {
                     <IndianRupee className="w-5 h-5" />
                     <span>{restaurant.priceRange}</span>
                   </div>
+                  {restaurant.minOrder && (
+                    <div className="flex items-center gap-1">
+                      <CircleDollarSign className="w-5 h-5" />
+                      <span>Min {restaurant.minOrder}</span>
+                    </div>
+                  )}
                   <div className="flex items-center gap-1">
                     <MapPin className="w-5 h-5" />
                     <span className="text-sm max-w-[200px] truncate">{restaurant.address}</span>
@@ -453,6 +486,17 @@ const RestaurantMenuPage = () => {
                   )}
                 </div>
               </div>
+
+              {restaurant.image && (
+                <div className="w-full lg:w-80 h-48 rounded-2xl overflow-hidden bg-white/10 shadow-2xl ring-1 ring-white/30">
+                  <img
+                    src={restaurant.image}
+                    alt={restaurant.name}
+                    className="w-full h-full object-cover"
+                    onError={hideBrokenImage}
+                  />
+                </div>
+              )}
 
               {/* Cart Summary Button */}
               {getCartItemCount() > 0 && (
@@ -533,6 +577,7 @@ const RestaurantMenuPage = () => {
                             src={dish.image}
                             alt={dish.name}
                             className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                            onError={hideBrokenImage}
                           />
                         ) : (
                           <div className={`w-full h-full bg-gradient-to-br ${
@@ -604,7 +649,9 @@ const RestaurantMenuPage = () => {
                         {/* Price and Add to Cart */}
                         <div className="flex items-center justify-between">
                           <div className="flex items-baseline gap-1">
-                            <span className="text-lg font-bold text-gray-900">{currencySymbol}{dish.price}</span>
+                            <span className="text-lg font-bold text-gray-900">
+                              {dish.price > 0 ? `${currencySymbol}${dish.price}` : 'Price unavailable'}
+                            </span>
                             <span className="text-xs text-gray-500">+ tax</span>
                           </div>
 

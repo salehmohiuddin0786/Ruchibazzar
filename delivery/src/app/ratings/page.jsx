@@ -1,7 +1,8 @@
 // app/delivery/ratings/page.jsx
 "use client";
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import SuperLayout from '../SuperLayout/page';
+import { deliveryApi } from '../lib/deliveryApi';
 import {
   Star,
   TrendingUp,
@@ -38,7 +39,31 @@ export default function RatingsPage() {
   const [ratingFilter, setRatingFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [viewMode, setViewMode] = useState('grid');
+  const [apiRatings, setApiRatings] = useState(null);
+  const [apiError, setApiError] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
   const reviewsPerPage = 6;
+
+  useEffect(() => {
+    let mounted = true;
+
+    deliveryApi('/delivery/ratings')
+      .then((data) => {
+        if (mounted) setApiRatings(data);
+      })
+      .catch((err) => {
+        if (!mounted) return;
+        setApiError(err.message || 'Failed to load ratings');
+        setApiRatings({ ratings: {}, reviews: [], achievements: [] });
+      })
+      .finally(() => {
+        if (mounted) setIsLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   // Ratings data
   const ratings = {
@@ -167,6 +192,29 @@ export default function RatingsPage() {
     { name: "Top Rated", icon: Trophy, color: "from-orange-500 to-red-500", earned: false, progress: 65 }
   ];
 
+  const liveRatings = {
+    overall: 0,
+    total: 0,
+    trends: ratings.trends,
+    breakdown: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 },
+    ...(apiRatings?.ratings || {}),
+    trends: {
+      ...ratings.trends,
+      ...(apiRatings?.ratings?.trends || {}),
+    },
+    breakdown: {
+      ...ratings.breakdown,
+      ...(apiRatings?.ratings?.breakdown || {}),
+    },
+  };
+  const liveReviews = apiRatings?.reviews || [];
+  const liveAchievements = (apiRatings?.achievements || []).map((achievement, index) => ({
+    icon: achievements[index % achievements.length]?.icon || Award,
+    color: achievements[index % achievements.length]?.color || 'from-amber-500 to-yellow-500',
+    earned: true,
+    ...achievement,
+  }));
+
   const getRatingStars = (rating, size = 16) => {
     return (
       <div className="flex items-center gap-0.5">
@@ -195,7 +243,7 @@ export default function RatingsPage() {
   };
 
   // Filter reviews
-  const filteredReviews = reviews.filter(review => {
+  const filteredReviews = liveReviews.filter(review => {
     if (ratingFilter === 'all') return true;
     return review.rating === parseInt(ratingFilter);
   });
@@ -204,7 +252,7 @@ export default function RatingsPage() {
   const indexOfLastReview = currentPage * reviewsPerPage;
   const indexOfFirstReview = indexOfLastReview - reviewsPerPage;
   const currentReviews = filteredReviews.slice(indexOfFirstReview, indexOfLastReview);
-  const totalPages = Math.ceil(filteredReviews.length / reviewsPerPage);
+  const totalPages = Math.max(1, Math.ceil(filteredReviews.length / reviewsPerPage));
 
   return (
     <SuperLayout>
@@ -243,12 +291,12 @@ export default function RatingsPage() {
           <div className="flex flex-col md:flex-row items-center gap-8">
             {/* Overall Rating */}
             <div className="text-center">
-              <div className="text-6xl font-bold text-gray-800 mb-2">{ratings.overall}</div>
+              <div className="text-6xl font-bold text-gray-800 mb-2">{liveRatings.overall}</div>
               <div className="mb-2">{getRatingStars(5, 20)}</div>
-              <p className="text-sm text-gray-500">out of {ratings.total} reviews</p>
+              <p className="text-sm text-gray-500">out of {liveRatings.total} reviews</p>
               <div className="flex items-center gap-2 mt-2 justify-center">
                 <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full">
-                  ↑ {ratings.trends.weekly} this week
+                  ↑ {liveRatings.trends.weekly} this week
                 </span>
               </div>
             </div>
@@ -256,8 +304,8 @@ export default function RatingsPage() {
             {/* Rating Distribution */}
             <div className="flex-1 w-full">
               {[5, 4, 3, 2, 1].map((rating) => {
-                const count = ratings.breakdown[rating];
-                const percentage = (count / ratings.total) * 100;
+                const count = liveRatings.breakdown[rating];
+                const percentage = liveRatings.total ? (count / liveRatings.total) * 100 : 0;
                 return (
                   <div key={rating} className="flex items-center gap-3 mb-2">
                     <div className="flex items-center gap-1 w-16">
@@ -280,19 +328,19 @@ export default function RatingsPage() {
             <div className="grid grid-cols-2 gap-3 min-w-[200px]">
               <div className="bg-emerald-50 rounded-xl p-3 text-center">
                 <p className="text-xs text-emerald-600">5-Star</p>
-                <p className="text-xl font-bold text-emerald-700">{ratings.breakdown[5]}</p>
+                <p className="text-xl font-bold text-emerald-700">{liveRatings.breakdown[5]}</p>
               </div>
               <div className="bg-blue-50 rounded-xl p-3 text-center">
                 <p className="text-xs text-blue-600">4-Star</p>
-                <p className="text-xl font-bold text-blue-700">{ratings.breakdown[4]}</p>
+                <p className="text-xl font-bold text-blue-700">{liveRatings.breakdown[4]}</p>
               </div>
               <div className="bg-amber-50 rounded-xl p-3 text-center">
                 <p className="text-xs text-amber-600">3-Star</p>
-                <p className="text-xl font-bold text-amber-700">{ratings.breakdown[3]}</p>
+                <p className="text-xl font-bold text-amber-700">{liveRatings.breakdown[3]}</p>
               </div>
               <div className="bg-rose-50 rounded-xl p-3 text-center">
                 <p className="text-xs text-rose-600">Below 3</p>
-                <p className="text-xl font-bold text-rose-700">{ratings.breakdown[2] + ratings.breakdown[1]}</p>
+                <p className="text-xl font-bold text-rose-700">{liveRatings.breakdown[2] + liveRatings.breakdown[1]}</p>
               </div>
             </div>
           </div>
@@ -305,7 +353,7 @@ export default function RatingsPage() {
             Your Achievements
           </h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-            {achievements.map((achievement, index) => {
+            {liveAchievements.map((achievement, index) => {
               const Icon = achievement.icon;
               return (
                 <div key={index} className={`relative p-4 rounded-xl bg-gradient-to-br ${achievement.color} text-white group hover:scale-105 transition-transform cursor-pointer`}>
@@ -397,7 +445,7 @@ export default function RatingsPage() {
 
                 {/* Tags */}
                 <div className="flex flex-wrap gap-1 mb-3">
-                  {review.tags.map((tag, i) => (
+                  {(review.tags || []).map((tag, i) => (
                     <span key={i} className="text-xs bg-amber-50 text-amber-700 px-2 py-1 rounded-full">
                       #{tag}
                     </span>
@@ -455,7 +503,7 @@ export default function RatingsPage() {
 
                       {/* Tags */}
                       <div className="flex flex-wrap gap-2 mb-3">
-                        {review.tags.map((tag, i) => (
+                        {(review.tags || []).map((tag, i) => (
                           <span key={i} className="text-xs bg-amber-50 text-amber-700 px-3 py-1 rounded-full">
                             {tag}
                           </span>
@@ -500,7 +548,9 @@ export default function RatingsPage() {
           <div className="text-center py-16 bg-white rounded-2xl border border-gray-100">
             <Star className="w-16 h-16 text-gray-300 mx-auto mb-4" />
             <h3 className="text-lg font-semibold text-gray-800 mb-2">No reviews found</h3>
-            <p className="text-gray-500 mb-4">Try adjusting your filter criteria</p>
+            <p className="text-gray-500 mb-4">
+              {apiError || (isLoading ? 'Loading ratings from backend.' : 'Try adjusting your filter criteria')}
+            </p>
             <button 
               onClick={() => setRatingFilter('all')}
               className="inline-flex items-center gap-2 bg-gradient-to-r from-amber-600 to-orange-600 text-white px-6 py-3 rounded-xl text-sm font-medium hover:shadow-lg transition-all"

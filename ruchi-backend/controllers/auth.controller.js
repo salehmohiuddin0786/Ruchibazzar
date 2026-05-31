@@ -1,5 +1,6 @@
 const bcrypt = require("bcryptjs");
 const axios = require("axios");
+const crypto = require("crypto");
 const { User, Restaurant } = require("../models");
 const generateToken = require("../utils/generateToken");
 
@@ -21,7 +22,7 @@ const normalizeIndianPhone = (phone) => {
   return withoutCountryCode;
 };
 
-const verifyFirebasePhoneToken = async (idToken, expectedPhone) => {
+const lookupFirebaseUser = async (idToken) => {
   const apiKey = process.env.FIREBASE_WEB_API_KEY;
 
   if (!apiKey) {
@@ -42,24 +43,52 @@ const verifyFirebasePhoneToken = async (idToken, expectedPhone) => {
       { idToken },
       { headers: { "Content-Type": "application/json" } }
     );
-    const firebasePhone = normalizeIndianPhone(response.data?.users?.[0]?.phoneNumber);
 
-    if (!firebasePhone || firebasePhone !== expectedPhone) {
-      const error = new Error("Firebase phone verification failed");
+    const firebaseUser = response.data?.users?.[0];
+
+    if (!firebaseUser) {
+      const error = new Error("Firebase user not found");
       error.statusCode = 401;
       throw error;
     }
 
-    return response.data.users[0];
+    return firebaseUser;
   } catch (error) {
     if (error.statusCode) throw error;
 
     const firebaseError = new Error(
-      error.response?.data?.error?.message || "Firebase phone verification failed"
+      error.response?.data?.error?.message || "Firebase verification failed"
     );
     firebaseError.statusCode = error.response?.status || 401;
     throw firebaseError;
   }
+};
+
+const verifyFirebaseGoogleToken = async (idToken) => {
+  const firebaseUser = await lookupFirebaseUser(idToken);
+  const providerIds = (firebaseUser.providerUserInfo || []).map(
+    (provider) => provider.providerId
+  );
+
+  if (!providerIds.includes("google.com")) {
+    const error = new Error("Google verification failed");
+    error.statusCode = 401;
+    throw error;
+  }
+
+  if (!firebaseUser.email) {
+    const error = new Error("Google account email is required");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return firebaseUser;
+};
+
+const makeGooglePlaceholderPhone = (firebaseUid) => {
+  const hash = crypto.createHash("sha256").update(firebaseUid).digest("hex");
+  const numeric = BigInt(`0x${hash}`).toString().slice(0, 14);
+  return numeric.padEnd(14, "0").replace(/^0/, "9");
 };
 
 const formatUserResponse = (user) => ({
@@ -75,6 +104,8 @@ const register = async (req, res) => {
   try {
     const { name, email, phone: rawPhone, password, role, firebaseIdToken } = req.body || {};
     const phone = normalizeIndianPhone(rawPhone);
+    let firebaseUser = null;
+    const isGoogleRegistration = !!firebaseIdToken;
 
     if (!name || !email || !phone) {
       return res.status(400).json({
@@ -90,14 +121,23 @@ const register = async (req, res) => {
       });
     }
 
-    if (!password) {
+    if (isGoogleRegistration) {
+      firebaseUser = await verifyFirebaseGoogleToken(firebaseIdToken);
+
+      if (String(firebaseUser.email || "").toLowerCase() !== String(email).toLowerCase()) {
+        return res.status(400).json({
+          success: false,
+          message: "Google account email does not match registration email",
+        });
+      }
+    }
+
+    if (!password && !isGoogleRegistration) {
       return res.status(400).json({
         success: false,
         message: "Password required",
       });
     }
-
-    await verifyFirebasePhoneToken(firebaseIdToken, phone);
 
     const userRole = role === ROLES.PARTNER ? ROLES.PARTNER : ROLES.CUSTOMER;
     const existingEmail = await User.findOne({ where: { email } });
@@ -115,8 +155,8 @@ const register = async (req, res) => {
       existingPhone.email = email;
       existingPhone.role = userRole;
       existingPhone.isVerified = true;
-      existingPhone.authProvider = "password";
-      existingPhone.password = await bcrypt.hash(password, 10);
+      existingPhone.authProvider = isGoogleRegistration ? "google" : "password";
+      existingPhone.password = password ? await bcrypt.hash(password, 10) : null;
 
       await existingPhone.save();
 
@@ -145,10 +185,10 @@ const register = async (req, res) => {
       name,
       email,
       phone,
-      password: await bcrypt.hash(password, 10),
+      password: password ? await bcrypt.hash(password, 10) : null,
       role: userRole,
       isVerified: true,
-      authProvider: "password",
+      authProvider: isGoogleRegistration ? "google" : "password",
     });
 
     const token = generateToken(user.id);
@@ -224,42 +264,93 @@ const login = async (req, res) => {
   }
 };
 
-const loginWithPhone = async (req, res) => {
+const googleAuth = async (req, res) => {
   try {
-    const phone = normalizeIndianPhone(req.body?.phone);
     const { firebaseIdToken } = req.body || {};
+    const firebaseUser = await verifyFirebaseGoogleToken(firebaseIdToken);
+    const email = String(firebaseUser.email || "").toLowerCase();
 
-    if (!phone) {
-      return res.status(400).json({
-        success: false,
-        message: "Valid 10 digit Indian phone number is required",
-      });
-    }
-
-    await verifyFirebasePhoneToken(firebaseIdToken, phone);
-
-    const user = await User.findOne({ where: { phone } });
+    let user = await User.findOne({ where: { email } });
 
     if (!user) {
-      return res.status(400).json({
-        success: false,
-        message: "User not found",
+      user = await User.create({
+        name: firebaseUser.displayName || email.split("@")[0] || "Google User",
+        email,
+        phone: makeGooglePlaceholderPhone(firebaseUser.localId),
+        password: null,
+        role: ROLES.CUSTOMER,
+        isVerified: true,
+        authProvider: "google",
       });
+    } else {
+      if (user.role !== ROLES.CUSTOMER) {
+        return res.status(403).json({
+          success: false,
+          message: "Please use the appropriate login portal",
+        });
+      }
+
+      user.name = user.name || firebaseUser.displayName || email.split("@")[0];
+      user.isVerified = true;
+      user.authProvider = user.authProvider || "google";
+      await user.save();
     }
 
     const token = generateToken(user.id);
 
     return res.json({
       success: true,
-      message: "Login successful",
+      message: "Google authentication successful",
       token,
-      user,
+      user: formatUserResponse(user),
     });
   } catch (error) {
-    console.error("Phone Login Error:", error);
+    console.error("Google Auth Error:", error);
     return res.status(error.statusCode || 500).json({
       success: false,
-      message: error.message || "Phone login failed",
+      message: error.message || "Google authentication failed",
+    });
+  }
+};
+
+const googlePortalLogin = async (req, res) => {
+  try {
+    const { firebaseIdToken } = req.body || {};
+    const firebaseUser = await verifyFirebaseGoogleToken(firebaseIdToken);
+    const email = String(firebaseUser.email || "").toLowerCase();
+
+    const user = await User.findOne({ where: { email } });
+
+    if (!user || ![ROLES.ADMIN, ROLES.PARTNER].includes(user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: "No admin or partner account found for this Google email",
+      });
+    }
+
+    user.name = user.name || firebaseUser.displayName || email.split("@")[0];
+    user.isVerified = true;
+    user.authProvider = user.authProvider || "google";
+    await user.save();
+
+    const restaurant =
+      user.role === ROLES.PARTNER
+        ? await Restaurant.findOne({ where: { ownerId: user.id } })
+        : null;
+    const token = generateToken(user.id);
+
+    return res.json({
+      success: true,
+      message: "Google login successful",
+      token,
+      user: formatUserResponse(user),
+      restaurant,
+    });
+  } catch (error) {
+    console.error("Google Portal Login Error:", error);
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Google login failed",
     });
   }
 };
@@ -323,6 +414,7 @@ const loginPartner = async (req, res) => {
 module.exports = {
   register,
   login,
-  loginWithPhone,
+  googleAuth,
+  googlePortalLogin,
   loginPartner,
 };

@@ -33,6 +33,28 @@ import Header from "../components/Header";
 import Sidebar from "../components/Sidebar";
 
 const API_URL = "http://localhost:5000/api";
+const SOCKET_URL = API_URL.replace(/\/api\/?$/, "");
+
+const ensureSocketIo = () =>
+  new Promise((resolve, reject) => {
+    if (typeof window === "undefined") return reject(new Error("Socket is not available"));
+    if (window.io) return resolve(window.io);
+
+    const existingScript = document.querySelector("script[data-ruchi-socket]");
+    if (existingScript) {
+      existingScript.addEventListener("load", () => resolve(window.io), { once: true });
+      existingScript.addEventListener("error", reject, { once: true });
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = `${SOCKET_URL}/socket.io/socket.io.js`;
+    script.async = true;
+    script.dataset.ruchiSocket = "true";
+    script.onload = () => resolve(window.io);
+    script.onerror = () => reject(new Error("Unable to load live tracking"));
+    document.body.appendChild(script);
+  });
 
 const formatMoney = (value) => `₹${Number(value || 0).toFixed(2)}`;
 
@@ -146,9 +168,30 @@ const getMapLink = (order) => {
   return null;
 };
 
-const OrderCard = ({ order, isExpanded, onToggleDetails, onUpdateStatus }) => {
+const getDeliveryTrackingLatLng = (order) => {
+  const lat = order?.deliveryLat || order?.deliveryLatitude;
+  const lng = order?.deliveryLng || order?.deliveryLongitude;
+
+  if (!lat || !lng) return null;
+  return { lat, lng };
+};
+
+const OrderCard = ({
+  order,
+  isExpanded,
+  onToggleDetails,
+  onUpdateStatus,
+  deliveryPartners = [],
+}) => {
   const [updating, setUpdating] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [selectedPartnerId, setSelectedPartnerId] = useState(
+    order.deliveryPartnerId ? String(order.deliveryPartnerId) : ""
+  );
+
+  useEffect(() => {
+    setSelectedPartnerId(order.deliveryPartnerId ? String(order.deliveryPartnerId) : "");
+  }, [order.deliveryPartnerId]);
 
   const getStatusBadge = (status) => {
     const config = {
@@ -209,9 +252,9 @@ const OrderCard = ({ order, isExpanded, onToggleDetails, onUpdateStatus }) => {
     );
   };
 
-  const handleStatusUpdate = async (newStatus) => {
+  const handleStatusUpdate = async (newStatus, options = {}) => {
     setUpdating(true);
-    await onUpdateStatus(order.id, newStatus);
+    await onUpdateStatus(order.id, newStatus, options);
     setUpdating(false);
   };
 
@@ -230,6 +273,10 @@ const OrderCard = ({ order, isExpanded, onToggleDetails, onUpdateStatus }) => {
   const manualAddress = getManualAddress(order);
   const mapLink = getMapLink(order);
   const coordinates = getOrderLatLng(order);
+  const liveCoordinates = getDeliveryTrackingLatLng(order);
+  const liveMapLink = liveCoordinates
+    ? `https://www.google.com/maps?q=${liveCoordinates.lat},${liveCoordinates.lng}`
+    : null;
 
   return (
     <div className="group relative">
@@ -382,6 +429,46 @@ const OrderCard = ({ order, isExpanded, onToggleDetails, onUpdateStatus }) => {
               </div>
             </div>
 
+            {(order.deliveryPartnerName || order.deliveryPartnerId || liveCoordinates) && (
+              <div className="mb-5">
+                <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                  <div className="p-1 bg-indigo-100 rounded-lg">
+                    <Truck size={14} className="text-indigo-600" />
+                  </div>
+                  Delivery Partner Live Tracking
+                </h4>
+
+                <div className="rounded-xl border border-indigo-100 bg-gradient-to-r from-indigo-50 to-blue-50 p-4 shadow-sm">
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase text-indigo-700">Assigned Partner</p>
+                      <p className="font-bold text-gray-900 mt-1">
+                        {order.deliveryPartnerName || "Delivery partner assigned"}
+                      </p>
+                      <p className="text-sm text-gray-600 mt-1">
+                        {liveCoordinates
+                          ? `Live position: ${Number(liveCoordinates.lat).toFixed(5)}, ${Number(liveCoordinates.lng).toFixed(5)}`
+                          : "Waiting for the partner to share live location"}
+                      </p>
+                    </div>
+
+                    {liveMapLink && (
+                      <a
+                        href={liveMapLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700 transition-colors"
+                      >
+                        <MapPin size={16} />
+                        Open Live Map
+                        <ExternalLink size={14} />
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="mb-5">
               <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
                 <div className="p-1 bg-green-100 rounded-lg">
@@ -501,14 +588,34 @@ const OrderCard = ({ order, isExpanded, onToggleDetails, onUpdateStatus }) => {
                   )}
 
                   {order.status?.toLowerCase() === "ready" && (
-                    <button
-                      onClick={() => handleStatusUpdate("on the way")}
-                      disabled={updating}
-                      className="px-5 py-2.5 bg-gradient-to-r from-indigo-500 to-indigo-600 text-white rounded-xl text-sm font-medium hover:from-indigo-600 hover:to-indigo-700 transition-all disabled:opacity-50 flex items-center gap-2 shadow-md shadow-indigo-200"
-                    >
-                      <Truck size={16} />
-                      Assign Delivery
-                    </button>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <select
+                        value={selectedPartnerId}
+                        onChange={(event) => setSelectedPartnerId(event.target.value)}
+                        disabled={updating}
+                        className="min-w-[220px] px-4 py-2.5 bg-white border border-indigo-200 rounded-xl text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 disabled:opacity-50"
+                      >
+                        <option value="">Select delivery partner</option>
+                        {deliveryPartners.map((partner) => (
+                          <option key={partner.id} value={partner.id}>
+                            {partner.name}
+                            {partner.isAvailable ? " - Available" : " - Busy"}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() =>
+                          handleStatusUpdate("on the way", {
+                            deliveryPartnerId: selectedPartnerId,
+                          })
+                        }
+                        disabled={updating || !selectedPartnerId}
+                        className="px-5 py-2.5 bg-gradient-to-r from-indigo-500 to-indigo-600 text-white rounded-xl text-sm font-medium hover:from-indigo-600 hover:to-indigo-700 transition-all disabled:opacity-50 flex items-center gap-2 shadow-md shadow-indigo-200"
+                      >
+                        <Truck size={16} />
+                        Assign Delivery
+                      </button>
+                    </div>
                   )}
 
                   {order.status?.toLowerCase() === "on the way" && (
@@ -577,6 +684,7 @@ const Orders = () => {
   const [successMessage, setSuccessMessage] = useState("");
   const [restaurantData, setRestaurantData] = useState(null);
   const [orders, setOrders] = useState([]);
+  const [deliveryPartners, setDeliveryPartners] = useState([]);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const audioRef = useRef(null);
   const previousOrdersRef = useRef([]);
@@ -670,6 +778,28 @@ const Orders = () => {
     },
     [playNotificationSound]
   );
+
+  const fetchDeliveryPartners = useCallback(async () => {
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) return;
+
+      const response = await fetch(`${API_URL}/delivery-partner/available`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) throw new Error("Failed to fetch delivery partners");
+
+      const data = await response.json();
+      setDeliveryPartners(data.partners || []);
+    } catch (err) {
+      console.error("Error fetching delivery partners:", err);
+    }
+  }, []);
 
   const fetchOrders = useCallback(
     async (showRefresh = false, page = 1, silent = false) => {
@@ -803,13 +933,53 @@ const Orders = () => {
 
     if (checkAuth()) {
       fetchOrders();
+      fetchDeliveryPartners();
       const intervalId = setInterval(() => {
         fetchOrders(false, pagination.page, true);
       }, 10000);
 
       return () => clearInterval(intervalId);
     }
-  }, [router, fetchOrders, pagination.page]);
+  }, [router, fetchOrders, fetchDeliveryPartners, pagination.page]);
+
+  useEffect(() => {
+    if (!restaurantData?.id) return undefined;
+
+    let socket;
+    let cancelled = false;
+
+    const mergeLiveLocation = (payload) => {
+      setOrders((prevOrders) =>
+        prevOrders.map((order) =>
+          Number(order.id) === Number(payload.orderId)
+            ? {
+                ...order,
+                deliveryLat: payload.deliveryLat,
+                deliveryLng: payload.deliveryLng,
+                deliveryStatus: payload.deliveryStatus || order.deliveryStatus,
+              }
+            : order
+        )
+      );
+    };
+
+    ensureSocketIo()
+      .then((io) => {
+        if (cancelled || !io) return;
+        socket = io(SOCKET_URL, { transports: ["websocket", "polling"] });
+        socket.emit("joinRestaurantRoom", restaurantData.id);
+        socket.on("deliveryLocationUpdated", mergeLiveLocation);
+        socket.on("deliveryAssigned", () => fetchOrders(false, pagination.page, true));
+        socket.on("orderStatusUpdated", () => fetchOrders(false, pagination.page, true));
+        socket.on("newOrder", () => fetchOrders(false, pagination.page, true));
+      })
+      .catch((err) => console.error("Live tracking socket error:", err));
+
+    return () => {
+      cancelled = true;
+      if (socket) socket.disconnect();
+    };
+  }, [restaurantData?.id, fetchOrders, pagination.page]);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -842,9 +1012,12 @@ const Orders = () => {
     setTimeout(() => setSuccessMessage(""), 2000);
   };
 
-  const updateOrderStatus = async (orderId, newStatus) => {
+  const updateOrderStatus = async (orderId, newStatus, options = {}) => {
     try {
       const token = localStorage.getItem("token");
+      const selectedPartner = deliveryPartners.find(
+        (partner) => String(partner.id) === String(options.deliveryPartnerId)
+      );
 
       const response = await fetch(`${API_URL}/orders/${orderId}/status`, {
         method: "PUT",
@@ -852,14 +1025,31 @@ const Orders = () => {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({
+          status: newStatus,
+          ...(options.deliveryPartnerId && {
+            deliveryPartnerId: options.deliveryPartnerId,
+          }),
+        }),
       });
 
-      if (!response.ok) throw new Error("Failed to update order status");
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.message || "Failed to update order status");
+      }
 
       setOrders((prevOrders) =>
         prevOrders.map((order) =>
-          order.id === orderId ? { ...order, status: newStatus } : order
+          order.id === orderId
+            ? {
+                ...order,
+                status: newStatus,
+                ...(options.deliveryPartnerId && {
+                  deliveryPartnerId: options.deliveryPartnerId,
+                  deliveryPartnerName: selectedPartner?.name || "",
+                }),
+              }
+            : order
         )
       );
 
@@ -877,11 +1067,15 @@ const Orders = () => {
         return updated;
       });
 
-      setSuccessMessage(`Order #${orderId} marked as ${newStatus}`);
+      setSuccessMessage(
+        selectedPartner
+          ? `Order #${orderId} assigned to ${selectedPartner.name}`
+          : `Order #${orderId} marked as ${newStatus}`
+      );
       setTimeout(() => setSuccessMessage(""), 3000);
     } catch (err) {
       console.error("Error updating order status:", err);
-      setError("Failed to update order status");
+      setError(err.message || "Failed to update order status");
       setTimeout(() => setError(""), 3000);
     }
   };
@@ -1311,6 +1505,7 @@ const Orders = () => {
                       isExpanded={expandedOrder === order.id}
                       onToggleDetails={() => toggleOrderDetails(order.id)}
                       onUpdateStatus={updateOrderStatus}
+                      deliveryPartners={deliveryPartners}
                     />
                   ))}
                 </div>

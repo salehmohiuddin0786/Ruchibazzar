@@ -110,8 +110,14 @@ export default function DeliveryHeader({ toggleSidebar, isSidebarOpen, pageTitle
 
   // Handle logout
   const handleLogout = () => {
+    localStorage.removeItem("deliveryToken");
+    localStorage.removeItem("deliveryUser");
+    localStorage.removeItem("deliveryPartner");
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
     localStorage.removeItem("partnerToken");
-    window.location.href = "/";
+    document.cookie = "deliveryToken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+    window.location.href = "/login";
   };
 
   const notifications = [
@@ -473,7 +479,7 @@ export default function DeliveryHeader({ toggleSidebar, isSidebarOpen, pageTitle
 
                     <div className="p-1">
                       <Link 
-                        href="/delivery/profile" 
+                        href="/profile" 
                         className="flex items-center gap-2 px-2 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-emerald-50 dark:hover:bg-gray-700 rounded-lg transition-all"
                         onClick={() => setShowProfileMenu(false)}
                       >
@@ -485,7 +491,7 @@ export default function DeliveryHeader({ toggleSidebar, isSidebarOpen, pageTitle
                       </Link>
                       
                       <Link 
-                        href="/delivery/schedule" 
+                        href="/" 
                         className="flex items-center gap-2 px-2 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-emerald-50 dark:hover:bg-gray-700 rounded-lg transition-all"
                         onClick={() => setShowProfileMenu(false)}
                       >
@@ -497,7 +503,7 @@ export default function DeliveryHeader({ toggleSidebar, isSidebarOpen, pageTitle
                       </Link>
                       
                       <Link 
-                        href="/delivery/settings" 
+                        href="/profile" 
                         className="flex items-center gap-2 px-2 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-emerald-50 dark:hover:bg-gray-700 rounded-lg transition-all"
                         onClick={() => setShowProfileMenu(false)}
                       >
@@ -508,7 +514,7 @@ export default function DeliveryHeader({ toggleSidebar, isSidebarOpen, pageTitle
                       </Link>
                       
                       <Link 
-                        href="/delivery/support" 
+                        href="/profile" 
                         className="flex items-center gap-2 px-2 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-emerald-50 dark:hover:bg-gray-700 rounded-lg transition-all"
                         onClick={() => setShowProfileMenu(false)}
                       >

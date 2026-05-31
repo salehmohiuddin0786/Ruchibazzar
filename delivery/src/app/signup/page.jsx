@@ -19,12 +19,37 @@ import {
   EyeOff,
   AlertCircle,
   CheckCircle,
+  Chrome,
   Upload,
   Gift,
   GraduationCap,
   Briefcase,
   HeartHandshake,
 } from "lucide-react";
+import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
+import { auth } from "../firebase";
+
+const parseApiResponse = async (response) => {
+  const text = await response.text();
+
+  if (!text) return {};
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { message: text };
+  }
+};
+
+const saveDeliverySession = (data) => {
+  localStorage.setItem("deliveryToken", data.token);
+  localStorage.setItem("deliveryUser", JSON.stringify(data.user));
+  if (data.partner) {
+    localStorage.setItem("deliveryPartner", JSON.stringify(data.partner));
+  }
+
+  document.cookie = `deliveryToken=${data.token}; path=/; max-age=86400; SameSite=Lax`;
+};
 
 export default function DeliveryPartnerSignup() {
   const router = useRouter();
@@ -34,6 +59,8 @@ export default function DeliveryPartnerSignup() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [currentSection, setCurrentSection] = useState("basic");
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [firebaseIdToken, setFirebaseIdToken] = useState("");
 
   const [formData, setFormData] = useState({
     // Login / Basic
@@ -104,6 +131,32 @@ export default function DeliveryPartnerSignup() {
     setError("");
   };
 
+  const handleGoogleSignup = async () => {
+    setError("");
+
+    try {
+      setIsGoogleLoading(true);
+
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: "select_account" });
+      const firebaseResult = await signInWithPopup(auth, provider);
+      const verifiedIdToken = await firebaseResult.user.getIdToken();
+      const googleUser = firebaseResult.user;
+
+      setFirebaseIdToken(verifiedIdToken);
+      setFormData((prev) => ({
+        ...prev,
+        fullName: prev.fullName || googleUser.displayName || "",
+        email: googleUser.email || prev.email,
+      }));
+    } catch (err) {
+      console.error("Delivery Google signup error:", err);
+      setError(err.message || "Google signup failed");
+    } finally {
+      setIsGoogleLoading(false);
+    }
+  };
+
   const validateForm = () => {
     if (!formData.fullName.trim()) return setError("Full name is required"), false;
     if (!/^[0-9]{10}$/.test(formData.phone)) return setError("Enter valid 10-digit mobile number"), false;
@@ -139,8 +192,8 @@ export default function DeliveryPartnerSignup() {
       return setError("Enter valid emergency contact number"), false;
     }
 
-    if (formData.password.length < 6) return setError("Password must be at least 6 characters"), false;
-    if (formData.password !== formData.confirmPassword) return setError("Passwords do not match"), false;
+    if (!firebaseIdToken && formData.password.length < 6) return setError("Password must be at least 6 characters"), false;
+    if (!firebaseIdToken && formData.password !== formData.confirmPassword) return setError("Passwords do not match"), false;
 
     return true;
   };
@@ -159,8 +212,7 @@ export default function DeliveryPartnerSignup() {
         email: formData.email,
         phone: formData.phone,
         password: formData.password,
-        role: "partner",
-
+        firebaseIdToken,
         dob: formData.dob,
         age: formData.age,
         gender: formData.gender,
@@ -199,10 +251,11 @@ export default function DeliveryPartnerSignup() {
         body: JSON.stringify(payload),
       });
 
-      const data = await response.json();
+      const data = await parseApiResponse(response);
 
       if (response.ok) {
-        router.push("/login");
+        saveDeliverySession(data);
+        router.replace("/");
       } else {
         setError(data.message || "Registration failed. Please try again.");
       }
@@ -224,10 +277,29 @@ export default function DeliveryPartnerSignup() {
             <Bike className="text-white" size={34} />
           </div>
           <h1 className="text-4xl font-bold text-white">Become a Delivery Partner</h1>
-          <p className="text-orange-100 mt-2">
-            Complete your profile and start earning with Ruchibazzar
-          </p>
-        </div>
+            <p className="text-orange-100 mt-2">
+              Complete your profile and start earning with Ruchibazzar
+            </p>
+            <button
+              type="button"
+              onClick={handleGoogleSignup}
+              disabled={isLoading || isGoogleLoading}
+              className={`mt-5 inline-flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold shadow-lg transition disabled:opacity-60 ${
+                firebaseIdToken
+                  ? "bg-green-50 text-green-700"
+                  : "bg-white text-gray-800 hover:bg-orange-50"
+              }`}
+            >
+              {isGoogleLoading ? (
+                "Connecting..."
+              ) : (
+                <>
+                  {firebaseIdToken ? <CheckCircle size={18} /> : <Chrome size={18} />}
+                  {firebaseIdToken ? "Google account connected" : "Sign up with Google"}
+                </>
+              )}
+            </button>
+          </div>
 
         <div className="bg-white rounded-3xl shadow-2xl overflow-hidden">
           <div className="bg-gradient-to-r from-orange-600 to-red-600 p-6 text-white">
@@ -354,25 +426,33 @@ export default function DeliveryPartnerSignup() {
                   <Input icon={Briefcase} label="Previous Delivery Experience" name="experience" value={formData.experience} onChange={handleChange} placeholder="Optional" className={inputClass} />
                   <Input icon={HeartHandshake} label="Emergency Contact Number *" name="emergencyContact" value={formData.emergencyContact} onChange={handleChange} placeholder="10-digit number" maxLength="10" className={inputClass} />
 
-                  <PasswordInput
-                    label="Password *"
-                    name="password"
-                    value={formData.password}
-                    onChange={handleChange}
-                    show={showPassword}
-                    setShow={setShowPassword}
-                    inputClass={inputClass}
-                  />
+                  {!firebaseIdToken ? (
+                    <>
+                      <PasswordInput
+                        label="Password *"
+                        name="password"
+                        value={formData.password}
+                        onChange={handleChange}
+                        show={showPassword}
+                        setShow={setShowPassword}
+                        inputClass={inputClass}
+                      />
 
-                  <PasswordInput
-                    label="Confirm Password *"
-                    name="confirmPassword"
-                    value={formData.confirmPassword}
-                    onChange={handleChange}
-                    show={showConfirmPassword}
-                    setShow={setShowConfirmPassword}
-                    inputClass={inputClass}
-                  />
+                      <PasswordInput
+                        label="Confirm Password *"
+                        name="confirmPassword"
+                        value={formData.confirmPassword}
+                        onChange={handleChange}
+                        show={showConfirmPassword}
+                        setShow={setShowConfirmPassword}
+                        inputClass={inputClass}
+                      />
+                    </>
+                  ) : (
+                    <div className="md:col-span-2 rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-700">
+                      Your Google account is connected. You can submit without creating a password.
+                    </div>
+                  )}
                 </Section>
               )}
 
