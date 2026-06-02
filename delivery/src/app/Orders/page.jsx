@@ -38,12 +38,32 @@ import {
   RefreshCw
 } from 'lucide-react';
 
+const safeText = (value, fallback = '') => String(value ?? fallback);
+
+const normalizeOrder = (order = {}) => ({
+  ...order,
+  id: safeText(order.id || order.rawId || 'Order'),
+  customer: safeText(order.customer, 'Customer'),
+  address: safeText(order.address, 'Address not available'),
+  restaurant: safeText(order.restaurant, 'Restaurant'),
+  phone: safeText(order.phone),
+  priority: ['high', 'medium', 'low'].includes(order.priority) ? order.priority : 'low',
+  status: safeText(order.status, 'assigned'),
+  amount: order.amount || formatRupee(order.amountValue || order.totalAmount || 0),
+  deliveryFee: order.deliveryFee || formatRupee(order.deliveryFeeValue || 0),
+  items: Number(order.items || 0),
+  distance: safeText(order.distance, 'N/A'),
+  estimatedTime: safeText(order.estimatedTime, 'N/A'),
+  paymentMethod: safeText(order.paymentMethod, 'Cash'),
+  rating: order.rating ?? 'N/A',
+});
+
 export default function DeliveryOrders() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedOrder, setSelectedOrder] = useState(null);
-  const [viewMode, setViewMode] = useState('table'); // 'table' or 'grid'
+  const [viewMode, setViewMode] = useState('grid'); // 'table' or 'grid'
   const [apiOrders, setApiOrders] = useState(null);
   const [apiError, setApiError] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -85,6 +105,16 @@ export default function DeliveryOrders() {
       mounted = false;
       window.removeEventListener('deliveryOrdersChanged', loadMountedOrders);
     };
+  }, []);
+
+  useEffect(() => {
+    const syncViewMode = () => {
+      if (window.innerWidth < 768) setViewMode('grid');
+    };
+
+    syncViewMode();
+    window.addEventListener('resize', syncViewMode);
+    return () => window.removeEventListener('resize', syncViewMode);
   }, []);
 
   const goOnline = async () => {
@@ -241,7 +271,7 @@ export default function DeliveryOrders() {
         gradient: "from-emerald-500 to-teal-500"
       },
     };
-    const config = statusConfig[status];
+    const config = statusConfig[status] || statusConfig.assigned;
     const Icon = config?.icon || Package;
     return (
       <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border ${config?.color}`}>
@@ -269,16 +299,17 @@ export default function DeliveryOrders() {
         icon: CheckCircle
       },
     };
-    const Icon = priorityConfig[priority].icon;
+    const config = priorityConfig[priority] || priorityConfig.low;
+    const Icon = config.icon;
     return (
-      <span className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full border ${priorityConfig[priority].color}`}>
+      <span className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full border ${config.color}`}>
         <Icon className="w-3 h-3" />
-        {priorityConfig[priority].label}
+        {config.label}
       </span>
     );
   };
 
-  const displayOrders = apiOrders ?? [];
+  const displayOrders = (apiOrders ?? []).map(normalizeOrder);
   const hasLoadedApiOrders = Array.isArray(apiOrders);
 
   const cleanPhoneNumber = (phone) => String(phone || '').replace(/[^\d+]/g, '');
@@ -513,28 +544,28 @@ export default function DeliveryOrders() {
 
   return (
     <SuperLayout>
-      <div className="space-y-6 pb-8">
+      <div className="min-w-0 space-y-4 pb-8 sm:space-y-6">
         {/* Animated Header */}
-        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-600 p-6 text-white">
+        <div className="relative min-w-0 overflow-hidden rounded-2xl bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-600 p-4 text-white sm:p-6">
           <div className="absolute inset-0 bg-grid-pattern opacity-10"></div>
           <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -translate-y-32 translate-x-32"></div>
           <div className="absolute bottom-0 left-0 w-48 h-48 bg-white/5 rounded-full translate-y-24 -translate-x-24"></div>
           
           <div className="relative z-10">
-            <div className="flex items-center justify-between flex-wrap gap-4">
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <Package className="w-8 h-8" />
-                  <h1 className="text-3xl font-bold">Delivery Orders</h1>
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="min-w-0">
+                <div className="mb-2 flex min-w-0 items-center gap-2">
+                  <Package className="h-6 w-6 shrink-0 sm:h-8 sm:w-8" />
+                  <h1 className="break-words text-2xl font-bold sm:text-3xl">Delivery Orders</h1>
                 </div>
-                <p className="text-emerald-100 text-lg">Manage and track all your delivery orders in real-time</p>
+                <p className="text-sm text-emerald-100 sm:text-lg">Manage and track all your delivery orders in real-time</p>
               </div>
-              <div className="flex gap-3">
-                <button className="bg-white/20 hover:bg-white/30 px-6 py-3 rounded-xl text-sm font-medium transition-all backdrop-blur-sm border border-white/20 flex items-center gap-2">
+              <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 sm:flex sm:gap-3">
+                <button className="flex items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/20 px-4 py-3 text-sm font-medium backdrop-blur-sm transition-all hover:bg-white/30 sm:px-6">
                   <Calendar size={18} />
                   Today's Schedule
                 </button>
-                <button className="bg-white text-emerald-600 px-6 py-3 rounded-xl text-sm font-medium hover:shadow-lg transition-all hover:-translate-y-0.5 flex items-center gap-2">
+                <button className="flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-medium text-emerald-600 transition-all hover:-translate-y-0.5 hover:shadow-lg sm:px-6">
                   <Download size={18} />
                   Export Report
                 </button>
@@ -542,12 +573,12 @@ export default function DeliveryOrders() {
             </div>
 
             {/* Quick Date Info */}
-            <div className="flex items-center gap-4 mt-4">
-              <div className="flex items-center gap-2 bg-white/10 rounded-lg px-4 py-2">
+            <div className="mt-4 grid grid-cols-1 gap-2 sm:flex sm:items-center sm:gap-4">
+              <div className="flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2 sm:px-4">
                 <Calendar size={16} />
                 <span className="text-sm">{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</span>
               </div>
-              <div className="flex items-center gap-2 bg-white/10 rounded-lg px-4 py-2">
+              <div className="flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2 sm:px-4">
                 <Clock size={16} />
                 <span className="text-sm">{new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</span>
               </div>
@@ -556,13 +587,13 @@ export default function DeliveryOrders() {
         </div>
 
         {/* Stats Cards with Animation */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
           {stats.map((stat, index) => {
             const Icon = stat.icon;
             return (
               <div 
                 key={index} 
-                className="group relative bg-white rounded-2xl shadow-sm border border-gray-100 p-6 hover:shadow-xl transition-all duration-300 hover:-translate-y-1"
+                className="group relative min-w-0 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl sm:p-6"
               >
                 <div className="absolute inset-0 bg-gradient-to-br from-white to-gray-50 opacity-0 group-hover:opacity-100 rounded-2xl transition-opacity"></div>
                 <div className="relative">
@@ -574,7 +605,7 @@ export default function DeliveryOrders() {
                       {stat.change}
                     </span>
                   </div>
-                  <p className="text-3xl font-bold text-gray-900 mb-1">{stat.value}</p>
+                  <p className="mb-1 break-words text-2xl font-bold text-gray-900 sm:text-3xl">{stat.value}</p>
                   <p className="text-sm font-medium text-gray-600">{stat.label}</p>
                   
                   {/* Progress bar */}
@@ -588,8 +619,8 @@ export default function DeliveryOrders() {
         </div>
 
         {/* Filters and View Toggle */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
-          <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+        <div className="rounded-2xl border border-gray-100 bg-white p-3 shadow-sm sm:p-4">
+          <div className="flex flex-col items-stretch justify-between gap-3 sm:gap-4 lg:flex-row lg:items-center">
             {/* Search */}
             <div className="relative flex-1 w-full">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
@@ -602,14 +633,14 @@ export default function DeliveryOrders() {
               />
             </div>
 
-            <div className="flex items-center gap-3 w-full sm:w-auto">
+            <div className="grid w-full grid-cols-1 gap-2 min-[430px]:grid-cols-[1fr_auto] sm:gap-3 lg:w-auto">
               {/* Status Filter */}
-              <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2">
+              <div className="flex min-w-0 items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
                 <Filter className="text-gray-400 w-4 h-4" />
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
-                  className="bg-transparent text-sm focus:outline-none"
+                  className="min-w-0 flex-1 bg-transparent text-sm focus:outline-none"
                 >
                   <option value="all">All Status</option>
                   <option value="assigned">Assigned</option>
@@ -620,10 +651,10 @@ export default function DeliveryOrders() {
               </div>
 
               {/* View Toggle */}
-              <div className="flex items-center gap-1 bg-gray-50 border border-gray-200 rounded-xl p-1">
+              <div className="flex items-center justify-center gap-1 rounded-xl border border-gray-200 bg-gray-50 p-1">
                 <button
                   onClick={() => setViewMode('table')}
-                  className={`p-2 rounded-lg transition-colors ${viewMode === 'table' ? 'bg-white shadow-sm text-emerald-600' : 'text-gray-500 hover:text-gray-700'}`}
+                  className={`hidden rounded-lg p-2 transition-colors md:inline-flex ${viewMode === 'table' ? 'bg-white shadow-sm text-emerald-600' : 'text-gray-500 hover:text-gray-700'}`}
                 >
                   <Package size={18} />
                 </button>
@@ -640,9 +671,9 @@ export default function DeliveryOrders() {
 
         {/* Orders Display - Table View */}
         {viewMode === 'table' && (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="hidden overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm md:block">
             <div className="overflow-x-auto">
-              <table className="w-full">
+              <table className="w-full min-w-[980px]">
                 <thead>
                   <tr className="bg-gradient-to-r from-emerald-50 to-teal-50 border-b border-gray-200">
                     {['Order ID', 'Customer', 'Delivery Address', 'Restaurant', 'Amount', 'Status', 'Actions'].map((header, i) => (
@@ -759,21 +790,21 @@ export default function DeliveryOrders() {
 
         {/* Orders Display - Grid View */}
         {viewMode === 'grid' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4 lg:grid-cols-3">
             {currentOrders.map((order) => (
               <div 
                 key={order.id}
-                className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:shadow-xl transition-all hover:-translate-y-1 cursor-pointer group"
+                className="group min-w-0 cursor-pointer rounded-2xl border border-gray-100 bg-white p-4 shadow-sm transition-all hover:-translate-y-1 hover:shadow-xl sm:p-5"
                 onClick={() => setSelectedOrder(order)}
               >
                 {/* Header */}
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-2">
+                <div className="mb-3 flex flex-col gap-2 min-[430px]:flex-row min-[430px]:items-start min-[430px]:justify-between">
+                  <div className="flex min-w-0 items-center gap-2">
                     <div className="w-10 h-10 bg-gradient-to-br from-emerald-100 to-teal-100 rounded-xl flex items-center justify-center">
                       <Package className="w-5 h-5 text-emerald-700" />
                     </div>
-                    <div>
-                      <span className="font-mono text-sm font-bold text-gray-900">{order.id}</span>
+                    <div className="min-w-0">
+                      <span className="block truncate font-mono text-sm font-bold text-gray-900">{order.id}</span>
                       <div className="mt-1">{getPriorityBadge(order.priority)}</div>
                     </div>
                   </div>
@@ -781,14 +812,14 @@ export default function DeliveryOrders() {
                 </div>
 
                 {/* Customer Info */}
-                <div className="mb-3 p-3 bg-gradient-to-r from-gray-50 to-gray-100/50 rounded-xl">
-                  <div className="flex items-center gap-2">
+                <div className="mb-3 rounded-xl bg-gradient-to-r from-gray-50 to-gray-100/50 p-3">
+                  <div className="flex min-w-0 items-center gap-2">
                     <div className="w-8 h-8 bg-gradient-to-br from-emerald-600 to-teal-600 rounded-lg flex items-center justify-center text-white font-bold">
-                      {order.customer.charAt(0)}
+                      {order.customer.charAt(0) || 'C'}
                     </div>
-                    <div>
-                      <p className="text-sm font-semibold text-gray-800">{order.customer}</p>
-                      <p className="text-xs text-gray-500 flex items-center gap-1">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-gray-800">{order.customer}</p>
+                      <p className="flex items-center gap-1 truncate text-xs text-gray-500">
                         <Phone size={10} />
                         {order.phone}
                       </p>
@@ -797,7 +828,7 @@ export default function DeliveryOrders() {
                 </div>
 
                 {/* Details Grid */}
-                <div className="grid grid-cols-2 gap-2 mb-3">
+                <div className="mb-3 grid grid-cols-1 gap-2 min-[430px]:grid-cols-2">
                   <div className="bg-gray-50 rounded-lg p-2">
                     <p className="text-xs text-gray-500">Restaurant</p>
                     <p className="text-sm font-medium truncate">{order.restaurant}</p>
@@ -817,12 +848,12 @@ export default function DeliveryOrders() {
                 </div>
 
                 {/* Amount and Actions */}
-                <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+                <div className="flex flex-col gap-3 border-t border-gray-100 pt-3 min-[430px]:flex-row min-[430px]:items-center min-[430px]:justify-between">
                   <div>
                     <p className="text-xs text-gray-500">Amount</p>
                     <p className="text-lg font-bold text-gray-900">{order.amount}</p>
                   </div>
-                  <div className="flex gap-1">
+                  <div className="flex flex-wrap gap-1 min-[430px]:justify-end">
                     {renderDeliveryStepButton(order)}
                     <button
                       onClick={(event) => {

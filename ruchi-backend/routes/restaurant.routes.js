@@ -72,6 +72,18 @@ router.get("/:id", restaurantController.getRestaurantById);
 |--------------------------------------------------------------------------
 */
 router.put(
+  "/:id/approval",
+  protect,
+  authorize("admin"),
+  restaurantController.updateRestaurantApproval
+);
+
+/*
+|--------------------------------------------------------------------------
+| APPROVE OR REJECT RESTAURANT
+|--------------------------------------------------------------------------
+*/
+router.put(
   "/:id",
   protect,
   authorize("partner", "admin"),

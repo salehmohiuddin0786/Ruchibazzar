@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 import { auth } from "../firebase";
+import UnderReviewPopup from "../components/UnderReviewPopup";
 
 const AUTH_BASE_API = "http://localhost:5000/api/auth";
 const AUTH_API = `${AUTH_BASE_API}/register`;
@@ -366,13 +367,20 @@ const PartnerRegister = () => {
         throw new Error(restaurantResult.message || "Restaurant creation failed");
       }
 
-      localStorage.setItem("restaurant", JSON.stringify(restaurantResult.restaurant));
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      localStorage.removeItem("restaurant");
+      sessionStorage.removeItem("token");
+      sessionStorage.removeItem("user");
+      sessionStorage.removeItem("restaurant");
+      document.cookie =
+        "token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
 
       setSuccess(true);
 
       setTimeout(() => {
-        router.push("/");
-      }, 1500);
+        router.push("/Login");
+      }, 2000);
     } catch (err) {
       console.error("Registration error:", err);
       setError(err.message || "Something went wrong");
@@ -383,16 +391,15 @@ const PartnerRegister = () => {
 
   if (success) {
     return (
-      <div className="min-h-screen bg-black flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl p-8 text-center max-w-md w-full">
-          <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-black">
-            Registration Successful
-          </h2>
-          <p className="text-gray-600 mt-2">
-            Partner and restaurant saved successfully.
-          </p>
-        </div>
+      <div className="min-h-screen bg-gradient-to-br from-black via-red-950 to-black">
+        <UnderReviewPopup
+          open
+          showClose={false}
+          title="Registration submitted"
+          message="Your restaurant account is now under admin review. You can login after approval."
+          primaryLabel="Back to login"
+          onPrimary={() => router.push("/Login")}
+        />
       </div>
     );
   }

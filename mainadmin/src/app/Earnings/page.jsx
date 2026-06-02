@@ -1,434 +1,324 @@
 "use client";
-import { useState } from "react";
-import SuperLayout from "../SuperLayout/page";
-import {
-  IndianRupee,
-  TrendingUp,
-  TrendingDown,
-  Calendar,
-  Download,
-  Filter,
-  RefreshCw,
+
+import { 
+  IndianRupee, 
+  Store, 
+  TrendingUp, 
+  Truck, 
   Wallet,
-  CreditCard,
-  Smartphone,
-  Landmark,
+  ArrowUpRight,
+  ArrowDownRight,
+  Calendar,
+  Activity,
   PieChart,
+  CreditCard,
+  Banknote,
+  AlertCircle,
   BarChart3,
-  LineChart,
-  Award,
-  Users,
-  Store,
-  ShoppingBag,
-  Truck,
-  ChevronLeft,
-  ChevronRight,
-  Eye,
-  MoreVertical,
-  Clock,
-  CheckCircle,
-  XCircle,
+  Download,
+  Filter
 } from "lucide-react";
-import { Line, Bar, Doughnut } from 'react-chartjs-2';
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  ArcElement,
-  Title,
-  Tooltip,
-  Legend,
-  Filler,
-} from 'chart.js';
+import { AdminFeaturePage } from "../components/AdminFeaturePage";
+import { money, parseCurrency } from "../data/mainAdmin";
+import { useMainAdminData } from "../lib/useMainAdminData";
 
-// Register ChartJS components
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  ArcElement,
-  Title,
-  Tooltip,
-  Legend,
-  Filler
-);
+export default function Earnings() {
+  const { rows, data, loading, error, refresh } = useMainAdminData("/mainadmin/earnings");
+  const summary = data?.summary || {};
+  const monthlyTrend = data?.monthlyTrend || [];
+  const categoryBreakdown = data?.categoryBreakdown || [];
 
-const Earnings = () => {
-  const [selectedPeriod, setSelectedPeriod] = useState("monthly");
-  const [selectedYear, setSelectedYear] = useState("2024");
-  const [selectedMonth, setSelectedMonth] = useState("March");
-  const [showFilters, setShowFilters] = useState(false);
-
-  // Sample earnings data
-  const earningsData = {
-    totalRevenue: 4850000,
-    platformFee: 485000,
-    vendorPayout: 4365000,
-    deliveryPartnerPayout: 291000,
-    netProfit: 194000,
-    growth: 23.5,
+  // Calculate growth percentages
+  const calculateGrowth = (current, previous) => {
+    if (!previous || previous === 0) return null;
+    const growth = ((current - previous) / previous) * 100;
+    return {
+      value: Math.abs(growth).toFixed(1),
+      isPositive: growth > 0,
+      isNegative: growth < 0
+    };
   };
 
-  // Monthly revenue data
-  const monthlyRevenue = {
-    labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
-    datasets: [
-      {
-        label: 'Revenue 2024',
-        data: [425000, 455000, 485000, 512000, 548000, 589000, 623000, 667000, 712000, 758000, 805000, 854000],
-        borderColor: '#6366f1',
-        backgroundColor: 'rgba(99, 102, 241, 0.1)',
-        tension: 0.4,
-        fill: true,
-        pointBackgroundColor: '#6366f1',
-        pointBorderColor: '#fff',
-        pointBorderWidth: 2,
-        pointRadius: 4,
-      },
-    ],
-  };
+  const revenueGrowth = calculateGrowth(summary.totalRevenue, summary.previousRevenue);
+  const commissionGrowth = calculateGrowth(summary.platformFee, summary.previousPlatformFee);
 
-  // Revenue breakdown by source
-  const revenueBySource = {
-    labels: ['Commission', 'Delivery Fees', 'Subscription', 'Advertising'],
-    datasets: [
-      {
-        data: [65, 20, 10, 5],
-        backgroundColor: [
-          '#6366f1',
-          '#8b5cf6',
-          '#ec4899',
-          '#f59e0b',
-        ],
-        borderWidth: 0,
-      },
-    ],
-  };
-
-  // Weekly revenue data
-  const weeklyRevenue = {
-    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-    datasets: [
-      {
-        label: 'This Week',
-        data: [125000, 142000, 138000, 156000, 189000, 245000, 198000],
-        backgroundColor: '#6366f1',
-        borderRadius: 8,
-      },
-      {
-        label: 'Last Week',
-        data: [112000, 128000, 135000, 142000, 168000, 212000, 175000],
-        backgroundColor: '#94a3b8',
-        borderRadius: 8,
-      },
-    ],
-  };
-
-  // Transaction history
-  const transactions = [
-    {
-      id: "TXN-001",
-      date: "2024-03-15T10:30:00",
-      description: "Commission from Fresh Foods",
-      amount: 12500,
-      type: "credit",
-      status: "completed",
-      category: "commission",
+  const stats = [
+    { 
+      label: "Total Revenue", 
+      value: money(summary.totalRevenue), 
+      change: revenueGrowth ? `${revenueGrowth.isPositive ? "+" : "-"}${revenueGrowth.value}%` : "vs last month",
+      icon: IndianRupee,
+      gradient: "from-emerald-500 to-emerald-600",
+      trend: revenueGrowth?.isPositive ? "up" : revenueGrowth?.isNegative ? "down" : "neutral"
     },
-    {
-      id: "TXN-002",
-      date: "2024-03-15T09:15:00",
-      description: "Delivery fees from Order #ORD-1234",
-      amount: 4500,
-      type: "credit",
-      status: "completed",
-      category: "delivery",
+    { 
+      label: "Platform Commission", 
+      value: money(summary.platformFee), 
+      change: commissionGrowth ? `${commissionGrowth.isPositive ? "+" : "-"}${commissionGrowth.value}%` : "platform earnings",
+      icon: Wallet,
+      gradient: "from-blue-500 to-blue-600",
+      trend: commissionGrowth?.isPositive ? "up" : commissionGrowth?.isNegative ? "down" : "neutral"
     },
-    {
-      id: "TXN-003",
-      date: "2024-03-14T16:45:00",
-      description: "Vendor payout - Organic Mart",
-      amount: 25000,
-      type: "debit",
-      status: "completed",
-      category: "payout",
+    { 
+      label: "Vendor Payout", 
+      value: money(summary.vendorPayout), 
+      change: `${summary.vendorCount || 0} active vendors`,
+      icon: Store,
+      gradient: "from-purple-500 to-purple-600"
     },
-    {
-      id: "TXN-004",
-      date: "2024-03-14T14:20:00",
-      description: "Subscription fee - Daily Needs",
-      amount: 5000,
-      type: "credit",
-      status: "completed",
-      category: "subscription",
-    },
-    {
-      id: "TXN-005",
-      date: "2024-03-14T11:30:00",
-      description: "Advertising fee - Gourmet Foods",
-      amount: 2500,
-      type: "credit",
-      status: "pending",
-      category: "advertising",
-    },
-    {
-      id: "TXN-006",
-      date: "2024-03-13T15:10:00",
-      description: "Delivery partner payout - Rahul Sharma",
-      amount: 8900,
-      type: "debit",
-      status: "completed",
-      category: "payout",
+    { 
+      label: "Delivery Payout", 
+      value: money(summary.deliveryPartnerPayout), 
+      change: `${summary.deliveryPartnerCount || 0} active partners`,
+      icon: Truck,
+      gradient: "from-amber-500 to-amber-600"
     },
   ];
 
-  // Top performing vendors
-  const topVendors = [
-    { name: "Fresh Foods", revenue: 345000, commission: 34500, orders: 1250 },
-    { name: "Organic Mart", revenue: 289000, commission: 28900, orders: 980 },
-    { name: "Daily Needs", revenue: 267000, commission: 26700, orders: 890 },
-    { name: "Spice Bazaar", revenue: 198000, commission: 19800, orders: 670 },
-    { name: "Gourmet Foods", revenue: 156000, commission: 15600, orders: 520 },
-  ];
-
-  // Chart options
-  const lineChartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        display: false,
-      },
-      tooltip: {
-        backgroundColor: '#1e293b',
-        titleColor: '#fff',
-        bodyColor: '#fff',
-        padding: 8,
-        cornerRadius: 6,
-        callbacks: {
-          label: function(context) {
-            return `₹${(context.parsed.y / 1000).toFixed(1)}K`;
-          }
-        }
-      },
-    },
-    scales: {
-      y: {
-        beginAtZero: true,
-        grid: {
-          color: 'rgba(0, 0, 0, 0.05)',
-        },
-        ticks: {
-          callback: function(value) {
-            return '₹' + (value / 1000).toFixed(0) + 'K';
-          },
-          font: {
-            size: 10
-          }
-        }
-      },
-      x: {
-        grid: {
-          display: false,
-        },
-        ticks: {
-          font: {
-            size: 10
-          }
-        }
-      },
-    },
-  };
-
-  const barChartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        position: 'top',
-        labels: {
-          usePointStyle: true,
-          boxWidth: 6,
-          font: {
-            size: 10
-          }
-        },
-      },
-      tooltip: {
-        backgroundColor: '#1e293b',
-        titleColor: '#fff',
-        bodyColor: '#fff',
-        padding: 8,
-        cornerRadius: 6,
-        callbacks: {
-          label: function(context) {
-            return `₹${(context.parsed.y / 1000).toFixed(1)}K`;
-          }
-        }
-      },
-    },
-    scales: {
-      y: {
-        beginAtZero: true,
-        grid: {
-          color: 'rgba(0, 0, 0, 0.05)',
-        },
-        ticks: {
-          callback: function(value) {
-            return '₹' + (value / 1000).toFixed(0) + 'K';
-          },
-          font: {
-            size: 10
-          }
-        }
-      },
-      x: {
-        grid: {
-          display: false,
-        },
-        ticks: {
-          font: {
-            size: 10
-          }
-        }
-      },
-    },
-  };
-
-  const doughnutOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        position: 'bottom',
-        labels: {
-          usePointStyle: true,
-          boxWidth: 8,
-          padding: 10,
-          font: {
-            size: 10
-          }
-        },
-      },
-      tooltip: {
-        backgroundColor: '#1e293b',
-        titleColor: '#fff',
-        bodyColor: '#fff',
-        padding: 8,
-        cornerRadius: 6,
-        callbacks: {
-          label: function(context) {
-            return `${context.label}: ${context.raw}%`;
-          }
-        }
-      },
-    },
-    cutout: '65%',
-  };
-
-  const formatCurrency = (amount) => {
-    if (amount >= 1000000) {
-      return `₹${(amount / 1000000).toFixed(1)}M`;
-    } else if (amount >= 1000) {
-      return `₹${(amount / 1000).toFixed(1)}K`;
-    }
-    return `₹${amount}`;
-  };
-
-  const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleString('en-IN', { 
-      day: '2-digit', 
-      month: 'short',
-      hour: '2-digit', 
-      minute: '2-digit',
-      hour12: true 
-    });
-  };
-
-  // Mobile card view for transactions
-  const MobileTransactionCard = ({ transaction }) => (
-    <div className="bg-white rounded-xl border border-gray-100 p-4 mb-3 shadow-sm">
-      <div className="flex items-start justify-between mb-2">
+  // Enhanced columns with custom rendering
+  const enhancedColumns = [
+    { 
+      key: "id", 
+      label: "Transaction ID",
+      render: (row) => (
         <div>
-          <p className="font-medium text-gray-900 text-sm">{transaction.id}</p>
-          <p className="text-xs text-gray-500">{formatDate(transaction.date)}</p>
+          <p className="font-mono text-xs font-medium text-slate-700">{String(row.id || "").slice(-8) || "N/A"}</p>
+          <p className="text-[10px] text-slate-400 uppercase">{row.type || "transaction"}</p>
         </div>
-        <span className={`text-xs font-semibold ${
-          transaction.type === 'credit' ? 'text-green-600' : 'text-red-600'
-        }`}>
-          {transaction.type === 'credit' ? '+' : '-'}{formatCurrency(transaction.amount)}
-        </span>
-      </div>
-      <p className="text-sm text-gray-600 mb-2">{transaction.description}</p>
-      <div className="flex items-center gap-2">
-        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium capitalize ${
-          transaction.type === 'credit' 
-            ? 'bg-green-50 text-green-700'
-            : 'bg-red-50 text-red-700'
-        }`}>
-          {transaction.type}
-        </span>
-        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
-          transaction.status === 'completed'
-            ? 'bg-green-50 text-green-700'
-            : 'bg-amber-50 text-amber-700'
-        }`}>
-          {transaction.status === 'completed' ? (
-            <CheckCircle className="w-3 h-3" />
-          ) : (
-            <Clock className="w-3 h-3" />
-          )}
-          {transaction.status}
-        </span>
-      </div>
-    </div>
-  );
+      )
+    },
+    { 
+      key: "date", 
+      label: "Date",
+      render: (row) => (
+        <div className="flex items-center gap-1.5">
+          <Calendar className="h-3.5 w-3.5 text-slate-400" />
+          <span className="text-sm text-slate-700">{row.date}</span>
+        </div>
+      )
+    },
+    { key: "description", label: "Description" },
+    { 
+      key: "amount", 
+      label: "Amount",
+      render: (row) => {
+        const isNegative = row.amount?.toString().startsWith("-");
+        return (
+          <div className="flex items-center gap-1">
+            {isNegative ? (
+              <ArrowDownRight className="h-3.5 w-3.5 text-rose-500" />
+            ) : (
+              <ArrowUpRight className="h-3.5 w-3.5 text-emerald-500" />
+            )}
+            <span className={`font-semibold ${isNegative ? "text-rose-600" : "text-emerald-600"}`}>
+              {money(row.amount)}
+            </span>
+          </div>
+        );
+      }
+    },
+    { 
+      key: "category", 
+      label: "Category",
+      render: (row) => {
+        const categoryColors = {
+          "Commission": "bg-blue-100 text-blue-700",
+          "Payout": "bg-purple-100 text-purple-700",
+          "Refund": "bg-rose-100 text-rose-700",
+          "Bonus": "bg-emerald-100 text-emerald-700"
+        };
+        const colorClass = categoryColors[row.category] || "bg-slate-100 text-slate-700";
+        return (
+          <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${colorClass}`}>
+            {row.category}
+          </span>
+        );
+      }
+    },
+    { 
+      key: "status", 
+      label: "Status", 
+      badge: true,
+      render: (row) => {
+        const statusConfig = {
+          Success: { color: "emerald", icon: TrendingUp },
+          Pending: { color: "amber", icon: AlertCircle },
+          Failed: { color: "rose", icon: AlertCircle }
+        };
+        const config = statusConfig[row.status] || statusConfig.Pending;
+        const StatusIcon = config.icon;
+        
+        return (
+          <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium bg-${config.color}-50 text-${config.color}-700`}>
+            <StatusIcon className="h-3 w-3" />
+            {row.status}
+          </span>
+        );
+      }
+    },
+  ];
 
-  // Mobile card view for vendors
-  const MobileVendorCard = ({ vendor, index }) => {
-    const contribution = (vendor.revenue / earningsData.totalRevenue) * 100;
+  // Monthly Trend Chart Component
+  const MonthlyTrend = () => {
+    if (loading || monthlyTrend.length === 0) return null;
+
+    const maxRevenue = Math.max(...monthlyTrend.map((month) => parseCurrency(month.revenue)), 1);
+    
     return (
-      <div className="bg-white rounded-xl border border-gray-100 p-4 mb-3 shadow-sm">
-        <div className="flex items-center gap-3 mb-3">
-          <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${
-            index === 0 ? 'from-yellow-500 to-yellow-600' :
-            index === 1 ? 'from-gray-400 to-gray-500' :
-            index === 2 ? 'from-amber-700 to-amber-800' :
-            'from-indigo-500 to-indigo-600'
-          } flex items-center justify-center text-white font-semibold text-sm`}>
-            {vendor.name.charAt(0)}
-          </div>
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white p-5">
+        <div className="mb-4 flex items-center justify-between">
           <div>
-            <p className="font-medium text-gray-900">{vendor.name}</p>
-            <p className="text-xs text-gray-500">{vendor.orders} orders</p>
+            <h3 className="font-semibold text-slate-900">Monthly Revenue Trend</h3>
+            <p className="text-xs text-slate-500">Last 6 months performance</p>
+          </div>
+          <div className="flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-1.5">
+            <BarChart3 className="h-3.5 w-3.5 text-slate-500" />
+            <span className="text-xs font-medium text-slate-600">vs previous period</span>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-2 mb-2">
-          <div>
-            <p className="text-xs text-gray-500">Revenue</p>
-            <p className="text-sm font-semibold text-gray-900">{formatCurrency(vendor.revenue)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-500">Commission</p>
-            <p className="text-sm font-semibold text-gray-900">{formatCurrency(vendor.commission)}</p>
-          </div>
+        <div className="flex items-end justify-between gap-2">
+          {monthlyTrend.map((month, idx) => {
+            const height = (parseCurrency(month.revenue) / maxRevenue) * 100;
+            return (
+              <div key={idx} className="flex flex-1 flex-col items-center gap-2">
+                <div 
+                  className="w-full max-w-[60px] rounded-t-lg bg-gradient-to-t from-emerald-500 to-emerald-400 transition-all hover:from-emerald-600 hover:to-emerald-500"
+                  style={{ height: `${Math.max(height, 5)}px`, minHeight: "30px" }}
+                />
+                <div className="text-center">
+                  <p className="text-xs font-semibold text-slate-700">{money(month.revenue)}</p>
+                  <p className="text-[10px] text-slate-400">{month.month}</p>
+                </div>
+              </div>
+            );
+          })}
         </div>
-        <div>
-          <div className="flex items-center justify-between text-xs mb-1">
-            <span className="text-gray-600">Contribution</span>
-            <span className="text-gray-900 font-medium">{contribution.toFixed(1)}%</span>
+      </div>
+    );
+  };
+
+  // Category Breakdown Component
+  const CategoryBreakdown = () => {
+    if (loading || categoryBreakdown.length === 0) return null;
+
+    const total = categoryBreakdown.reduce((sum, cat) => sum + parseCurrency(cat.value), 0);
+    
+    return (
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white p-5">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold text-slate-900">Revenue Breakdown</h3>
+            <p className="text-xs text-slate-500">By category</p>
           </div>
-          <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+          <PieChart className="h-4 w-4 text-slate-400" />
+        </div>
+        <div className="space-y-3">
+          {categoryBreakdown.map((category) => {
+            const percentage = total > 0 ? ((parseCurrency(category.value) / total) * 100).toFixed(1) : "0.0";
+            return (
+              <div key={category.name}>
+                <div className="mb-1 flex items-center justify-between text-sm">
+                  <span className="font-medium text-slate-700">{category.name}</span>
+                  <span className="text-xs text-slate-500">{percentage}%</span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                  <div 
+                    className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all"
+                    style={{ width: `${percentage}%` }}
+                  />
+                </div>
+                <p className="mt-1 text-xs font-semibold text-slate-600">{money(category.value)}</p>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  // Top Vendors Component with enhanced styling
+  const TopVendors = () => {
+    const topVendors = data?.topVendors || [];
+    if (loading || topVendors.length === 0) return null;
+
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold text-slate-900">Top Performing Vendors</h3>
+            <p className="text-xs text-slate-500">Highest revenue contributors</p>
+          </div>
+          <TrendingUp className="h-4 w-4 text-emerald-500" />
+        </div>
+        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+          {topVendors.slice(0, 3).map((vendor, idx) => (
             <div 
-              className="h-full bg-indigo-600 rounded-full"
-              style={{ width: `${contribution}%` }}
-            />
+              key={vendor.name} 
+              className="group relative overflow-hidden rounded-xl border border-slate-200 bg-white p-4 transition-all hover:shadow-lg hover:-translate-y-0.5"
+            >
+              <div className="absolute right-0 top-0 rounded-bl-xl bg-gradient-to-br from-emerald-100 to-emerald-200 px-2 py-1 text-xs font-bold text-emerald-700">
+                #{idx + 1}
+              </div>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-600 text-sm font-bold text-white">
+                      {vendor.name?.charAt(0) || "V"}
+                    </div>
+                    <div>
+                      <p className="font-semibold text-slate-900">{vendor.name}</p>
+                      <p className="text-xs text-slate-500">{vendor.orders} orders</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-3">
+                <p className="text-2xl font-bold text-emerald-600">{money(vendor.revenue)}</p>
+                <div className="mt-2 flex items-center justify-between text-sm">
+                  <span className="text-slate-500">Commission</span>
+                  <span className="font-semibold text-slate-700">{money(vendor.commission)}</span>
+                </div>
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                  <div 
+                    className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400"
+                    style={{ width: `${topVendors[0]?.revenue ? (parseCurrency(vendor.revenue) / parseCurrency(topVendors[0].revenue)) * 100 : 0}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  // Quick Stats Summary
+  const QuickStatsSummary = () => {
+    if (loading) return null;
+    
+    return (
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-gradient-to-r from-slate-50 to-white p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="rounded-lg bg-slate-100 p-2">
+              <Activity className="h-4 w-4 text-slate-600" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-slate-700">Financial Summary</p>
+              <p className="text-xs text-slate-500">
+                Total Transactions: {summary.totalTransactions || 0} • Success Rate: {summary.successRate || 0}%
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <div className="flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1">
+              <Banknote className="h-3 w-3 text-emerald-600" />
+              <span className="text-xs font-medium text-emerald-700">Net Profit: {money(summary.netProfit)}</span>
+            </div>
+            <div className="flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1">
+              <CreditCard className="h-3 w-3 text-blue-600" />
+              <span className="text-xs font-medium text-blue-700">Avg Order: {money(summary.averageOrderValue)}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -436,396 +326,68 @@ const Earnings = () => {
   };
 
   return (
-    <SuperLayout>
-      <div className="space-y-4 sm:space-y-6 px-2 sm:px-0">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-          <div>
-            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
-              Earnings & Analytics
-            </h1>
-            <p className="text-gray-500 mt-0.5 text-xs sm:text-sm">
-              Track your platform's financial performance
-            </p>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100/50">
+      <AdminFeaturePage
+        title="Earnings & Analytics"
+        description="Live revenue, commission, payout, and transaction data from backend orders and earning records."
+        stats={stats}
+        rows={rows}
+        filters={["All", "Success", "Pending", "Failed"]}
+        columns={enhancedColumns}
+        loading={loading}
+        error={error}
+        onRefresh={refresh}
+      >
+        {/* Analytics Grid */}
+        {!loading && rows.length > 0 && (
+          <div className="space-y-4">
+            <QuickStatsSummary />
+            <div className="grid gap-4 lg:grid-cols-2">
+              <MonthlyTrend />
+              <CategoryBreakdown />
+            </div>
+            <TopVendors />
           </div>
-          <div className="flex gap-2 w-full sm:w-auto">
-            <button className="flex-1 sm:flex-none px-3 sm:px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all text-xs sm:text-sm font-medium inline-flex items-center justify-center gap-1.5">
-              <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span>Export</span>
+        )}
+
+        {/* Export Actions Bar */}
+        {!loading && rows.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3">
+            <div className="flex items-center gap-2">
+              <Download className="h-4 w-4 text-slate-500" />
+              <span className="text-sm text-slate-600">Export financial data</span>
+            </div>
+            <div className="flex gap-2">
+              <button className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 transition-all hover:bg-slate-50">
+                CSV
+              </button>
+              <button className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 transition-all hover:bg-slate-50">
+                PDF
+              </button>
+              <button className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-slate-900">
+                Generate Report
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Empty State */}
+        {!loading && rows.length === 0 && !error && (
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white py-16 text-center shadow-sm">
+            <div className="mb-4 rounded-full bg-gradient-to-br from-emerald-100 to-emerald-200 p-4">
+              <IndianRupee className="h-8 w-8 text-emerald-600" />
+            </div>
+            <h3 className="text-lg font-semibold text-slate-800">No earnings data found</h3>
+            <p className="mt-1 text-sm text-slate-500">Transaction data will appear here once orders are processed.</p>
+            <button
+              onClick={refresh}
+              className="mt-4 inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-slate-800 to-slate-900 px-4 py-2 text-sm font-medium text-white transition-all hover:shadow-lg"
+            >
+              Refresh
             </button>
-            <button className="flex-1 sm:flex-none px-3 sm:px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all text-xs sm:text-sm font-medium inline-flex items-center justify-center gap-1.5">
-              <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span className="hidden sm:inline">Select Date</span>
-            </button>
           </div>
-        </div>
-
-        {/* Main Stats Cards - Responsive grid */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
-          <div className="bg-white rounded-lg sm:rounded-xl shadow-sm hover:shadow-md transition-all duration-300 border border-gray-100 p-3 sm:p-4">
-            <div className="flex items-center justify-between">
-              <div className="p-1.5 sm:p-2 bg-blue-50 rounded-lg">
-                <IndianRupee className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-blue-600" />
-              </div>
-              <span className="text-[10px] sm:text-xs font-semibold text-green-600 bg-green-50 px-1.5 py-0.5 rounded-full">
-                +{earningsData.growth}%
-              </span>
-            </div>
-            <div className="mt-2 sm:mt-3">
-              <h3 className="text-gray-600 text-[10px] sm:text-xs font-medium">Total Revenue</h3>
-              <p className="text-sm sm:text-base lg:text-lg font-bold text-gray-900 mt-0.5">
-                {formatCurrency(earningsData.totalRevenue)}
-              </p>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg sm:rounded-xl shadow-sm hover:shadow-md transition-all duration-300 border border-gray-100 p-3 sm:p-4">
-            <div className="flex items-center justify-between">
-              <div className="p-1.5 sm:p-2 bg-purple-50 rounded-lg">
-                <Wallet className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-purple-600" />
-              </div>
-              <span className="text-[10px] sm:text-xs font-semibold text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded-full">
-                Fee
-              </span>
-            </div>
-            <div className="mt-2 sm:mt-3">
-              <h3 className="text-gray-600 text-[10px] sm:text-xs font-medium">Commission</h3>
-              <p className="text-sm sm:text-base lg:text-lg font-bold text-gray-900 mt-0.5">
-                {formatCurrency(earningsData.platformFee)}
-              </p>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg sm:rounded-xl shadow-sm hover:shadow-md transition-all duration-300 border border-gray-100 p-3 sm:p-4">
-            <div className="flex items-center justify-between">
-              <div className="p-1.5 sm:p-2 bg-green-50 rounded-lg">
-                <TrendingUp className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-green-600" />
-              </div>
-              <span className="text-[10px] sm:text-xs font-semibold text-green-600 bg-green-50 px-1.5 py-0.5 rounded-full">
-                Net
-              </span>
-            </div>
-            <div className="mt-2 sm:mt-3">
-              <h3 className="text-gray-600 text-[10px] sm:text-xs font-medium">Net Profit</h3>
-              <p className="text-sm sm:text-base lg:text-lg font-bold text-gray-900 mt-0.5">
-                {formatCurrency(earningsData.netProfit)}
-              </p>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg sm:rounded-xl shadow-sm hover:shadow-md transition-all duration-300 border border-gray-100 p-3 sm:p-4">
-            <div className="flex items-center justify-between">
-              <div className="p-1.5 sm:p-2 bg-amber-50 rounded-lg">
-                <Award className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-amber-600" />
-              </div>
-              <span className="text-[10px] sm:text-xs font-semibold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full">
-                Margin
-              </span>
-            </div>
-            <div className="mt-2 sm:mt-3">
-              <h3 className="text-gray-600 text-[10px] sm:text-xs font-medium">Profit Margin</h3>
-              <p className="text-sm sm:text-base lg:text-lg font-bold text-gray-900 mt-0.5">
-                {((earningsData.netProfit / earningsData.totalRevenue) * 100).toFixed(1)}%
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Period Selector */}
-        <div className="bg-white rounded-lg sm:rounded-xl shadow-sm border border-gray-100 p-3 sm:p-4">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-              {['Daily', 'Weekly', 'Monthly', 'Yearly'].map((period) => (
-                <button
-                  key={period}
-                  onClick={() => setSelectedPeriod(period.toLowerCase())}
-                  className={`px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${
-                    selectedPeriod === period.toLowerCase()
-                      ? "bg-indigo-600 text-white"
-                      : "text-gray-600 hover:bg-gray-50"
-                  }`}
-                >
-                  {period}
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
-              <select
-                value={selectedYear}
-                onChange={(e) => setSelectedYear(e.target.value)}
-                className="flex-1 sm:flex-none px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 bg-white"
-              >
-                <option>2024</option>
-                <option>2023</option>
-                <option>2022</option>
-              </select>
-              {selectedPeriod === "monthly" && (
-                <select
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(e.target.value)}
-                  className="flex-1 sm:flex-none px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 bg-white"
-                >
-                  <option>Jan</option>
-                  <option>Feb</option>
-                  <option>Mar</option>
-                  <option>Apr</option>
-                  <option>May</option>
-                  <option>Jun</option>
-                  <option>Jul</option>
-                  <option>Aug</option>
-                  <option>Sep</option>
-                  <option>Oct</option>
-                  <option>Nov</option>
-                  <option>Dec</option>
-                </select>
-              )}
-              <button className="p-1.5 sm:p-2 border border-gray-200 rounded-lg hover:bg-gray-50">
-                <Filter className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-gray-600" />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Charts Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-          {/* Revenue Chart */}
-          <div className="lg:col-span-2 bg-white rounded-lg sm:rounded-xl shadow-sm border border-gray-100 p-3 sm:p-4">
-            <div className="flex justify-between items-center mb-3 sm:mb-4">
-              <div>
-                <h2 className="text-sm sm:text-base font-semibold text-gray-800">Revenue Overview</h2>
-                <p className="text-xs text-gray-500">{selectedYear}</p>
-              </div>
-              <div className="p-1.5 sm:p-2 bg-indigo-50 rounded-lg">
-                <LineChart className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-600" />
-              </div>
-            </div>
-            <div className="h-48 sm:h-64 lg:h-72">
-              <Line data={monthlyRevenue} options={lineChartOptions} />
-            </div>
-          </div>
-
-          {/* Revenue Distribution */}
-          <div className="bg-white rounded-lg sm:rounded-xl shadow-sm border border-gray-100 p-3 sm:p-4">
-            <div className="flex justify-between items-center mb-3 sm:mb-4">
-              <div>
-                <h2 className="text-sm sm:text-base font-semibold text-gray-800">Revenue Sources</h2>
-                <p className="text-xs text-gray-500">Breakdown</p>
-              </div>
-              <div className="p-1.5 sm:p-2 bg-purple-50 rounded-lg">
-                <PieChart className="w-4 h-4 sm:w-5 sm:h-5 text-purple-600" />
-              </div>
-            </div>
-            <div className="h-48 sm:h-56">
-              <Doughnut data={revenueBySource} options={doughnutOptions} />
-            </div>
-          </div>
-        </div>
-
-        {/* Weekly Comparison */}
-        <div className="bg-white rounded-lg sm:rounded-xl shadow-sm border border-gray-100 p-3 sm:p-4">
-          <div className="flex justify-between items-center mb-3 sm:mb-4">
-            <div>
-              <h2 className="text-sm sm:text-base font-semibold text-gray-800">Weekly Revenue</h2>
-              <p className="text-xs text-gray-500">This week vs last week</p>
-            </div>
-            <div className="p-1.5 sm:p-2 bg-green-50 rounded-lg">
-              <BarChart3 className="w-4 h-4 sm:w-5 sm:h-5 text-green-600" />
-            </div>
-          </div>
-          <div className="h-48 sm:h-64">
-            <Bar data={weeklyRevenue} options={barChartOptions} />
-          </div>
-        </div>
-
-        {/* Payout Breakdown */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-          <div className="bg-gradient-to-br from-blue-50 to-blue-100/50 p-3 sm:p-4 rounded-lg">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="p-1.5 bg-white rounded-lg">
-                <Store className="w-4 h-4 text-blue-600" />
-              </div>
-              <h3 className="text-sm font-semibold text-gray-900">Vendor Payouts</h3>
-            </div>
-            <p className="text-base sm:text-lg font-bold text-gray-900">{formatCurrency(earningsData.vendorPayout)}</p>
-            <p className="text-xs text-gray-600 mt-1">+15.3% vs last month</p>
-          </div>
-
-          <div className="bg-gradient-to-br from-purple-50 to-purple-100/50 p-3 sm:p-4 rounded-lg">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="p-1.5 bg-white rounded-lg">
-                <Truck className="w-4 h-4 text-purple-600" />
-              </div>
-              <h3 className="text-sm font-semibold text-gray-900">Partner Payouts</h3>
-            </div>
-            <p className="text-base sm:text-lg font-bold text-gray-900">{formatCurrency(earningsData.deliveryPartnerPayout)}</p>
-            <p className="text-xs text-gray-600 mt-1">+8.7% vs last month</p>
-          </div>
-
-          <div className="bg-gradient-to-br from-amber-50 to-amber-100/50 p-3 sm:p-4 rounded-lg">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="p-1.5 bg-white rounded-lg">
-                <Wallet className="w-4 h-4 text-amber-600" />
-              </div>
-              <h3 className="text-sm font-semibold text-gray-900">Pending Payouts</h3>
-            </div>
-            <p className="text-base sm:text-lg font-bold text-gray-900">₹1.25L</p>
-            <p className="text-xs text-gray-600 mt-1">Next: Mar 20</p>
-          </div>
-        </div>
-
-        {/* Top Vendors - Mobile View */}
-        <div className="sm:hidden">
-          <h2 className="text-base font-semibold text-gray-800 mb-3">Top Vendors</h2>
-          {topVendors.map((vendor, index) => (
-            <MobileVendorCard key={index} vendor={vendor} index={index} />
-          ))}
-        </div>
-
-        {/* Top Vendors - Desktop Table */}
-        <div className="hidden sm:block bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="p-4 border-b border-gray-100">
-            <div className="flex justify-between items-center">
-              <h2 className="text-base font-semibold text-gray-800">Top Performing Vendors</h2>
-              <button className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
-                View All
-              </button>
-            </div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Vendor</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Revenue</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Commission</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Orders</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Contribution</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {topVendors.map((vendor, index) => {
-                  const contribution = (vendor.revenue / earningsData.totalRevenue) * 100;
-                  return (
-                    <tr key={index} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <div className={`w-7 h-7 rounded-lg bg-gradient-to-br ${
-                            index === 0 ? 'from-yellow-500 to-yellow-600' :
-                            index === 1 ? 'from-gray-400 to-gray-500' :
-                            index === 2 ? 'from-amber-700 to-amber-800' :
-                            'from-indigo-500 to-indigo-600'
-                          } flex items-center justify-center text-white font-semibold text-xs`}>
-                            {vendor.name.charAt(0)}
-                          </div>
-                          <span className="text-sm font-medium text-gray-900">{vendor.name}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-900">{formatCurrency(vendor.revenue)}</td>
-                      <td className="px-4 py-3 text-sm text-gray-600">{formatCurrency(vendor.commission)}</td>
-                      <td className="px-4 py-3 text-sm text-gray-600">{vendor.orders}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-gray-600">{contribution.toFixed(1)}%</span>
-                          <div className="w-12 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                            <div className="h-full bg-indigo-600 rounded-full" style={{ width: `${contribution}%` }} />
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <button className="p-1 hover:bg-gray-100 rounded">
-                          <Eye className="w-4 h-4 text-gray-500" />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Recent Transactions - Mobile View */}
-        <div className="sm:hidden">
-          <h2 className="text-base font-semibold text-gray-800 mb-3">Recent Transactions</h2>
-          {transactions.map((transaction) => (
-            <MobileTransactionCard key={transaction.id} transaction={transaction} />
-          ))}
-        </div>
-
-        {/* Recent Transactions - Desktop Table */}
-        <div className="hidden sm:block bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="p-4 border-b border-gray-100">
-            <div className="flex justify-between items-center">
-              <h2 className="text-base font-semibold text-gray-800">Recent Transactions</h2>
-              <button className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
-                View All
-              </button>
-            </div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {transactions.map((transaction) => (
-                  <tr key={transaction.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-4 py-3">
-                      <span className="font-mono text-xs font-medium text-gray-900">{transaction.id}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="text-xs text-gray-600">{formatDate(transaction.date)}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="text-xs text-gray-900">{transaction.description}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`text-xs font-medium ${
-                        transaction.type === 'credit' ? 'text-green-600' : 'text-red-600'
-                      }`}>
-                        {transaction.type === 'credit' ? '+' : '-'}{formatCurrency(transaction.amount)}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium capitalize ${
-                        transaction.type === 'credit' 
-                          ? 'bg-green-50 text-green-700'
-                          : 'bg-red-50 text-red-700'
-                      }`}>
-                        {transaction.type}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
-                        transaction.status === 'completed'
-                          ? 'bg-green-50 text-green-700'
-                          : 'bg-amber-50 text-amber-700'
-                      }`}>
-                        {transaction.status === 'completed' ? (
-                          <CheckCircle className="w-3 h-3" />
-                        ) : (
-                          <Clock className="w-3 h-3" />
-                        )}
-                        {transaction.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </SuperLayout>
+        )}
+      </AdminFeaturePage>
+    </div>
   );
-};
-
-export default Earnings;
+}

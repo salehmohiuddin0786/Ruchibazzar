@@ -25,6 +25,9 @@ import {
   Utensils,
   Truck,
   Timer,
+  FileText,
+  ExternalLink,
+  Upload,
 } from "lucide-react";
 
 import Sidebar from "../components/Sidebar";
@@ -58,6 +61,15 @@ const defaultProfile = {
   rating: 0,
   totalReviews: 0,
 };
+
+const documentFields = [
+  { key: "fssaiDocument", label: "FSSAI Document" },
+  { key: "gstDocument", label: "GST Certificate" },
+  { key: "panCard", label: "PAN Card" },
+  { key: "registrationCertificate", label: "Registration Certificate" },
+  { key: "cancelledCheque", label: "Cancelled Cheque" },
+  { key: "menuPdf", label: "Menu PDF" },
+];
 
 const useSidebar = () => {
   const [isMobile, setIsMobile] = useState(false);
@@ -97,16 +109,20 @@ export default function Profile() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [error, setError] = useState("");
+  const [restaurantRecord, setRestaurantRecord] = useState({});
+  const [documentFiles, setDocumentFiles] = useState({});
+  const [previewDocument, setPreviewDocument] = useState(null);
 
   const tabs = [
     { id: "profile", label: "Profile", icon: User },
     { id: "settings", label: "Restaurant", icon: Building2 },
+    { id: "documents", label: "Documents", icon: FileText },
     { id: "security", label: "Security", icon: Shield },
     { id: "notifications", label: "Notifications", icon: Bell },
   ];
 
   useEffect(() => {
-    const loadUserData = () => {
+    const loadUserData = async () => {
       try {
         const token = localStorage.getItem("token");
         const userData = localStorage.getItem("user");
@@ -118,23 +134,40 @@ export default function Profile() {
         }
 
         const user = JSON.parse(userData);
-        const restaurant = restaurantData ? JSON.parse(restaurantData) : {};
+        let restaurant = restaurantData ? JSON.parse(restaurantData) : {};
+
+        try {
+          const response = await fetch(`${API_URL}/api/restaurants/my-restaurant`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const data = await response.json().catch(() => ({}));
+          if (response.ok) {
+            restaurant = data.restaurant || data.data || data || restaurant;
+            localStorage.setItem("restaurant", JSON.stringify(restaurant));
+          }
+        } catch {
+          // Keep the locally cached restaurant if the refresh fails.
+        }
+
+        setRestaurantRecord(restaurant);
 
         setProfileData({
           restaurantName: restaurant.name || restaurant.restaurantName || "",
-          ownerName: user.name || "",
-          phone: user.phone || "",
-          email: user.email || "",
+          ownerName: restaurant.ownerName || user.name || "",
+          phone: restaurant.restaurantPhone || restaurant.ownerPhone || user.phone || "",
+          email: restaurant.restaurantEmail || restaurant.ownerEmail || user.email || "",
           address: restaurant.address || "",
           openingTime: restaurant.openingTime || "10:00",
           closingTime: restaurant.closingTime || "22:00",
           website: restaurant.website || "",
-          description: restaurant.description || "",
-          cuisineType: Array.isArray(restaurant.cuisineType)
+          description: restaurant.aboutRestaurant || restaurant.description || "",
+          cuisineType: Array.isArray(restaurant.cuisines)
+            ? restaurant.cuisines.join(", ")
+            : Array.isArray(restaurant.cuisineType)
             ? restaurant.cuisineType.join(", ")
             : restaurant.cuisineType || "",
           deliveryRadius: restaurant.deliveryRadius || "5",
-          avgPreparationTime: restaurant.avgPreparationTime || "25-30",
+          avgPreparationTime: restaurant.avgPreparationTime || restaurant.preparationTime || "25-30",
           restaurantSince: restaurant.restaurantSince || "",
           rating: Number(restaurant.rating || 0),
           totalReviews: Number(restaurant.totalReviews || 0),
@@ -194,6 +227,18 @@ export default function Profile() {
     setProfileImageFile(file);
   };
 
+  const handleDocumentChange = (key, file) => {
+    if (!file) return;
+
+    const allowedTypes = ["application/pdf", "image/jpeg", "image/jpg", "image/png", "image/webp"];
+    if (!allowedTypes.includes(file.type)) {
+      setError("Please upload PDF, JPG, PNG, or WEBP files only.");
+      return;
+    }
+
+    setDocumentFiles((prev) => ({ ...prev, [key]: file }));
+  };
+
   const handleSaveProfile = async () => {
     setError("");
     setSaveSuccess(false);
@@ -227,6 +272,10 @@ export default function Profile() {
         payload.append("logo", profileImageFile);
       }
 
+      Object.entries(documentFiles).forEach(([key, file]) => {
+        if (file) payload.append(key, file);
+      });
+
       const response = await fetch(`${API_URL}/api/restaurants/profile`, {
         method: "PUT",
         headers: {
@@ -244,8 +293,10 @@ export default function Profile() {
       const updatedRestaurant = data.restaurant || {};
 
       localStorage.setItem("restaurant", JSON.stringify(updatedRestaurant));
+      setRestaurantRecord(updatedRestaurant);
       setProfileImage(getMediaUrl(updatedRestaurant.image || updatedRestaurant.logo || ""));
       setProfileImageFile(null);
+      setDocumentFiles({});
 
       const oldUser = JSON.parse(localStorage.getItem("user") || "{}");
       localStorage.setItem(
@@ -308,6 +359,109 @@ export default function Profile() {
       )}
     </div>
   );
+
+  const DocumentPreviewModal = () => {
+    if (!previewDocument) return null;
+
+    const href = previewDocument.href;
+    const isPdf = /\.pdf($|\?)/i.test(href);
+
+    return (
+      <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/60 p-3 backdrop-blur-sm sm:items-center">
+        <div className="w-full max-w-4xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+          <div className="flex items-center justify-between gap-3 border-b p-4">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Document preview</p>
+              <h3 className="truncate text-lg font-extrabold text-gray-900">{previewDocument.label}</h3>
+            </div>
+            <button onClick={() => setPreviewDocument(null)} className="rounded-full p-2 hover:bg-gray-100">
+              <X size={20} />
+            </button>
+          </div>
+
+          <div className="h-[70vh] bg-gray-100">
+            {isPdf ? (
+              <iframe title={previewDocument.label} src={href} className="h-full w-full" />
+            ) : (
+              <img src={href} alt={previewDocument.label} className="h-full w-full object-contain" />
+            )}
+          </div>
+
+          <div className="flex justify-end gap-2 border-t p-3">
+            <a
+              href={href}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+            >
+              <ExternalLink size={16} />
+              Open
+            </a>
+            <button
+              onClick={() => setPreviewDocument(null)}
+              className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const DocumentCard = ({ field }) => {
+    const uploadedPath = restaurantRecord?.[field.key];
+    const selectedFile = documentFiles[field.key];
+    const href = selectedFile ? URL.createObjectURL(selectedFile) : getMediaUrl(uploadedPath);
+    const hasDocument = Boolean(href);
+
+    return (
+      <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <FileText className="h-5 w-5 text-red-600" />
+              <h3 className="font-bold text-gray-900">{field.label}</h3>
+            </div>
+            <p className="mt-1 text-sm text-gray-500">
+              {selectedFile ? selectedFile.name : hasDocument ? "Uploaded" : "Not uploaded"}
+            </p>
+          </div>
+          <span
+            className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${
+              hasDocument ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
+            }`}
+          >
+            {hasDocument ? "Available" : "Missing"}
+          </span>
+        </div>
+
+        {hasDocument && (
+          <button
+            type="button"
+            onClick={() => setPreviewDocument({ label: field.label, href })}
+            className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+          >
+            <ExternalLink size={16} />
+            Preview
+          </button>
+        )}
+
+        {isEditing && (
+          <label className="mt-3 inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700">
+            <Upload size={16} />
+            {hasDocument ? "Change document" : "Upload document"}
+            <input
+              type="file"
+              accept="image/*,application/pdf"
+              className="hidden"
+              onChange={(event) => handleDocumentChange(field.key, event.target.files?.[0])}
+            />
+          </label>
+        )}
+      </div>
+    );
+  };
 
   const MobileTabsDrawer = () => (
     <>
@@ -589,6 +743,34 @@ export default function Profile() {
                     </>
                   )}
 
+                  {activeTab === "documents" && (
+                    <>
+                      <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <h2 className="text-xl font-extrabold text-gray-900">Restaurant Documents</h2>
+                          <p className="mt-1 text-sm text-gray-500">
+                            Preview uploaded documents and change them while editing your profile.
+                          </p>
+                        </div>
+                        {!isEditing && (
+                          <button
+                            onClick={() => setIsEditing(true)}
+                            className="inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700"
+                          >
+                            <Edit2 size={16} />
+                            Edit documents
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        {documentFields.map((field) => (
+                          <DocumentCard key={field.key} field={field} />
+                        ))}
+                      </div>
+                    </>
+                  )}
+
                   {activeTab === "security" && (
                     <>
                       <h2 className="mb-6 text-xl font-extrabold text-gray-900">Security</h2>
@@ -646,6 +828,7 @@ export default function Profile() {
       </div>
 
       <MobileTabsDrawer />
+      <DocumentPreviewModal />
 
       <div className="fixed bottom-0 left-0 right-0 z-30 border-t bg-white px-4 py-2 md:hidden">
         <div className="flex justify-around">

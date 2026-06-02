@@ -16,6 +16,11 @@ import {
 } from "lucide-react";
 import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 import { auth } from "../firebase";
+import UnderReviewPopup from "../components/UnderReviewPopup";
+
+const UNDER_REVIEW_CODE = "RESTAURANT_UNDER_REVIEW";
+const UNDER_REVIEW_MESSAGE =
+  "Your restaurant account is being reviewed by our admin team. You can login after approval.";
 
 const parseApiResponse = async (response) => {
   const text = await response.text();
@@ -42,6 +47,7 @@ const Login = () => {
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState("");
+  const [showUnderReviewPopup, setShowUnderReviewPopup] = useState(false);
 
   const redirectByRole = useCallback(
     (role) => {
@@ -96,16 +102,18 @@ const Login = () => {
     (e) => {
       setEmail(e.target.value);
       if (error) setError("");
+      if (showUnderReviewPopup) setShowUnderReviewPopup(false);
     },
-    [error]
+    [error, showUnderReviewPopup]
   );
 
   const handlePasswordChange = useCallback(
     (e) => {
       setPassword(e.target.value);
       if (error) setError("");
+      if (showUnderReviewPopup) setShowUnderReviewPopup(false);
     },
-    [error]
+    [error, showUnderReviewPopup]
   );
 
   const saveAuthData = (data) => {
@@ -170,6 +178,11 @@ const Login = () => {
       const data = await parseApiResponse(response);
 
       if (!response.ok) {
+        if (data.code === UNDER_REVIEW_CODE) {
+          setShowUnderReviewPopup(true);
+          setIsLoading(false);
+          return;
+        }
         throw new Error(data.message || "Login failed");
       }
 
@@ -214,6 +227,10 @@ const Login = () => {
       const data = await parseApiResponse(response);
 
       if (!response.ok) {
+        if (data.code === UNDER_REVIEW_CODE) {
+          setShowUnderReviewPopup(true);
+          return;
+        }
         throw new Error(data.message || "Google login failed");
       }
 
@@ -256,6 +273,12 @@ const Login = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-black via-red-950 to-black flex items-center justify-center p-4 relative overflow-hidden">
+      <UnderReviewPopup
+        open={showUnderReviewPopup}
+        onClose={() => setShowUnderReviewPopup(false)}
+        message={UNDER_REVIEW_MESSAGE}
+      />
+
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-red-600 rounded-full opacity-20 animate-pulse blur-3xl"></div>
         <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-red-700 rounded-full opacity-20 animate-pulse delay-1000 blur-3xl"></div>

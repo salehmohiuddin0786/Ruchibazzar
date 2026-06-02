@@ -1,357 +1,277 @@
 "use client";
-// import SuperHeader from "../components/SuperHeader";
-import SuperLayout from "../SuperLayout/page";
-import { 
-  Store,
-  ShoppingCart,
-  Truck,
-  IndianRupee,
-  TrendingUp,
-  TrendingDown,
-  LineChart,
-  Package,
-  Star,
-  Users,
-  Download,
-  RefreshCw,
-  Clock,
-  Bell,
-  ChevronRight
-} from 'lucide-react';
-import { Line, Bar } from 'react-chartjs-2';
+
 import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  Title,
-  Tooltip,
-  Legend,
-  Filler
-} from 'chart.js';
+  AlertTriangle,
+  ArrowRight,
+  ClipboardCheck,
+  FileBarChart,
+  RefreshCw,
+  ShieldAlert,
+  TrendingUp,
+  Users,
+  Store,
+  ShoppingBag,
+  CreditCard,
+  FileText,
+  AlertCircle,
+} from "lucide-react";
+import Link from "next/link";
+import SuperLayout from "../SuperLayout/page";
+import { StatusBadge } from "../components/AdminFeaturePage";
+import { useMainAdminData } from "../lib/useMainAdminData";
 
-// Register ChartJS components
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  Title,
-  Tooltip,
-  Legend,
-  Filler
-);
+// Helper to get icon based on stat label
+const getStatIcon = (label) => {
+  if (label.includes("Restaurant")) return Store;
+  if (label.includes("Customer")) return Users;
+  if (label.includes("Delivery")) return Users;
+  if (label.includes("Order")) return ShoppingBag;
+  if (label.includes("Payout")) return CreditCard;
+  if (label.includes("GST")) return FileText;
+  if (label.includes("Fraud")) return ShieldAlert;
+  if (label.includes("Support")) return AlertCircle;
+  return TrendingUp;
+};
 
-const SuperDashboard = () => {
-  // Sample data for charts
-  const revenueData = {
-    labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
-    datasets: [
-      {
-        label: 'Revenue 2024',
-        data: [65000, 75000, 85000, 95000, 110000, 125000],
-        borderColor: '#6366f1',
-        backgroundColor: 'rgba(99, 102, 241, 0.1)',
-        tension: 0.4,
-        fill: true,
-        pointBackgroundColor: '#6366f1',
-        pointBorderColor: '#fff',
-        pointBorderWidth: 2,
-        pointRadius: 4,
-      },
-    ],
-  };
+const cardGradients = [
+  "from-blue-500 to-blue-600",
+  "from-emerald-500 to-emerald-600",
+  "from-amber-500 to-amber-600",
+  "from-rose-500 to-rose-600",
+  "from-violet-500 to-violet-600",
+  "from-cyan-500 to-cyan-600",
+];
 
-  const orderData = {
-    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-    datasets: [
-      {
-        label: 'Orders',
-        data: [65, 75, 85, 95, 110, 125, 140],
-        backgroundColor: '#8b5cf6',
-        borderRadius: 8,
-      },
-    ],
-  };
-
-  const chartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        display: false,
-      },
-      tooltip: {
-        backgroundColor: '#1e293b',
-        titleColor: '#fff',
-        bodyColor: '#fff',
-        padding: 12,
-        cornerRadius: 8,
-      },
-    },
-    scales: {
-      y: {
-        beginAtZero: true,
-        grid: {
-          color: 'rgba(0, 0, 0, 0.05)',
-        },
-      },
-      x: {
-        grid: {
-          display: false,
-        },
-      },
-    },
-  };
-
-  const stats = [
-    {
-      title: "Total Vendors",
-      value: "48",
-      change: "+12%",
-      trend: "up",
-      icon: Store,
-      lightColor: "bg-blue-50",
-      iconColor: "text-blue-600",
-    },
-    {
-      title: "Total Orders",
-      value: "1,250",
-      change: "+23%",
-      trend: "up",
-      icon: ShoppingCart,
-      lightColor: "bg-green-50",
-      iconColor: "text-green-600",
-    },
-    {
-      title: "Delivery Partners",
-      value: "120",
-      change: "-3%",
-      trend: "down",
-      icon: Truck,
-      lightColor: "bg-purple-50",
-      iconColor: "text-purple-600",
-    },
-    {
-      title: "Total Revenue",
-      value: "₹4.85L",
-      change: "+18%",
-      trend: "up",
-      icon: IndianRupee,
-      lightColor: "bg-amber-50",
-      iconColor: "text-amber-600",
-    },
-  ];
-
-  const recentActivities = [
-    { id: 1, action: "New vendor registered", time: "5 minutes ago", icon: Store, color: "text-blue-600", bgColor: "bg-blue-50" },
-    { id: 2, action: "Order #12345 completed", time: "15 minutes ago", icon: Package, color: "text-green-600", bgColor: "bg-green-50" },
-    { id: 3, action: "New delivery partner joined", time: "1 hour ago", icon: Truck, color: "text-purple-600", bgColor: "bg-purple-50" },
-    { id: 4, action: "Payment received", time: "2 hours ago", icon: IndianRupee, color: "text-amber-600", bgColor: "bg-amber-50" },
-    { id: 5, action: "System update completed", time: "3 hours ago", icon: RefreshCw, color: "text-gray-600", bgColor: "bg-gray-50" },
-  ];
-
-  const topVendors = [
-    { name: "Fresh Foods", orders: 245, revenue: "₹45,000", rating: 4.8 },
-    { name: "Organic Mart", orders: 198, revenue: "₹38,500", rating: 4.9 },
-    { name: "Daily Needs", orders: 167, revenue: "₹32,000", rating: 4.7 },
-    { name: "Super Store", orders: 145, revenue: "₹28,500", rating: 4.6 },
-    { name: "Green Grocers", orders: 132, revenue: "₹25,800", rating: 4.8 },
-  ];
+export default function SuperDashboard() {
+  const { data, loading, error, refresh } = useMainAdminData("/mainadmin/dashboard");
+  const stats = data?.stats || [];
+  const actions = data?.actions || [];
+  const restaurants = data?.restaurantApplications || [];
+  const auditLogs = data?.auditLogs || [];
 
   return (
     <SuperLayout>
-      {/* <SuperHeader title="Dashboard" /> */}
-      <div className="space-y-6 p-4 sm:p-6">
+      <div className="min-w-0 space-y-6">
         {/* Header Section */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
-              Super Admin Dashboard
-            </h1>
-            <p className="text-gray-500 mt-1 text-sm sm:text-base">Welcome back! Here's what's happening with your platform today.</p>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <div className="h-8 w-1 rounded-full bg-gradient-to-b from-blue-600 to-cyan-600" />
+              <h1 className="break-words text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl xl:text-4xl bg-gradient-to-r from-slate-900 to-slate-600 bg-clip-text text-transparent">
+                Main Admin Dashboard
+              </h1>
+            </div>
+            <p className="mt-2 max-w-3xl text-sm text-slate-500 leading-relaxed">
+              Live backend overview for restaurants, customers, delivery partners, orders, payouts, GST, fraud, support, and audit history.
+            </p>
           </div>
-          <div className="flex gap-3 w-full sm:w-auto">
-            <button className="flex-1 sm:flex-none px-4 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all shadow-md hover:shadow-lg text-sm font-medium inline-flex items-center justify-center gap-2">
-              <Download className="w-4 h-4" />
-              <span>Report</span>
-            </button>
-            <button className="flex-1 sm:flex-none px-4 py-2.5 border border-gray-200 rounded-xl hover:bg-gray-50 transition-all text-sm font-medium inline-flex items-center justify-center gap-2">
-              <RefreshCw className="w-4 h-4" />
-              <span className="hidden sm:inline">Refresh</span>
-            </button>
-            <button className="sm:hidden p-2.5 border border-gray-200 rounded-xl hover:bg-gray-50">
-              <Bell className="w-5 h-5 text-gray-600" />
-            </button>
-          </div>
+          <button
+            onClick={refresh}
+            disabled={loading}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 hover:shadow-md disabled:opacity-60 active:scale-95 sm:w-auto"
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            Refresh
+          </button>
         </div>
+
+        {/* Error Alert */}
+        {error && (
+          <div className="animate-in slide-in-from-top-2 fade-in-0 duration-200 rounded-xl border border-rose-100 bg-gradient-to-r from-rose-50 to-white px-5 py-3.5 text-sm text-rose-700 shadow-sm">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="h-4 w-4" />
+              <span>{error}</span>
+            </div>
+          </div>
+        )}
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-          {stats.map((stat, index) => (
-            <div
-              key={index}
-              className="bg-white rounded-2xl shadow-sm hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 border border-gray-100"
-            >
-              <div className="p-6">
-                <div className="flex items-center justify-between">
-                  <div className={`p-3 rounded-xl ${stat.lightColor}`}>
-                    <stat.icon className={`w-6 h-6 ${stat.iconColor}`} />
+        <div className="grid grid-cols-1 gap-4 min-[480px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          {stats.map((stat, index) => {
+            const Icon = getStatIcon(stat.label);
+            const gradient = cardGradients[index % cardGradients.length];
+            return (
+              <div
+                key={stat.label}
+                className="group relative min-w-0 overflow-hidden rounded-xl bg-white p-4 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-slate-200/50 border border-slate-100 sm:p-5"
+                style={{ animationDelay: `${index * 60}ms` }}
+              >
+                {/* Animated gradient background on hover */}
+                <div className={`absolute inset-0 bg-gradient-to-br ${gradient} opacity-0 transition-opacity duration-300 group-hover:opacity-5`} />
+                
+                {/* Decorative circle */}
+                <div className="absolute -right-8 -top-8 h-20 w-20 rounded-full bg-gradient-to-br from-slate-100 to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
+                
+                <div className="relative z-10">
+                  <div className={`inline-flex rounded-xl p-2.5 bg-gradient-to-br ${gradient} shadow-lg`}>
+                    <Icon className="h-4 w-4 text-white" />
                   </div>
-                  <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
-                    stat.trend === 'up' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'
-                  }`}>
-                    {stat.trend === 'up' ? 
-                      <TrendingUp className="w-3 h-3" /> : 
-                      <TrendingDown className="w-3 h-3" />
-                    }
-                    {stat.change}
-                  </div>
-                </div>
-                <div className="mt-4">
-                  <h3 className="text-gray-600 text-sm font-medium">{stat.title}</h3>
-                  <div className="flex items-baseline justify-between mt-1">
-                    <p className="text-2xl sm:text-3xl font-bold text-gray-900">{stat.value}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Charts Section */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Revenue Chart */}
-          <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-gray-100">
-            <div className="flex justify-between items-center mb-6">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-800">Revenue Overview</h2>
-                <p className="text-sm text-gray-500">Last 6 months</p>
-              </div>
-              <div className="p-2 bg-indigo-50 rounded-lg">
-                <LineChart className="w-5 h-5 text-indigo-600" />
-              </div>
-            </div>
-            <div className="h-64">
-              <Line data={revenueData} options={chartOptions} />
-            </div>
-          </div>
-
-          {/* Orders Chart */}
-          <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-gray-100">
-            <div className="flex justify-between items-center mb-6">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-800">Weekly Orders</h2>
-                <p className="text-sm text-gray-500">Last 7 days</p>
-              </div>
-              <div className="p-2 bg-purple-50 rounded-lg">
-                <Package className="w-5 h-5 text-purple-600" />
-              </div>
-            </div>
-            <div className="h-64">
-              <Bar data={orderData} options={chartOptions} />
-            </div>
-          </div>
-        </div>
-
-        {/* Bottom Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Recent Activities */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 lg:col-span-1">
-            <div className="p-6 border-b border-gray-100">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-gray-800">Recent Activities</h2>
-                <Clock className="w-5 h-5 text-gray-400" />
-              </div>
-            </div>
-            <div className="divide-y divide-gray-100">
-              {recentActivities.map((activity) => (
-                <div key={activity.id} className="p-4 hover:bg-gray-50 transition-colors">
-                  <div className="flex items-start gap-3">
-                    <div className={`p-2 rounded-lg ${activity.bgColor}`}>
-                      <activity.icon className={`w-4 h-4 ${activity.color}`} />
+                  <p className="mt-3 break-words text-xs font-semibold uppercase tracking-wide text-slate-500">{stat.label}</p>
+                  <p className="mt-1 break-words text-2xl font-bold text-slate-900">{stat.value}</p>
+                  {stat.change && (
+                    <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5">
+                      <TrendingUp className="h-3 w-3 text-emerald-600" />
+                      <span className="text-xs font-semibold text-emerald-700">{stat.change}</span>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-800">{activity.action}</p>
-                      <p className="text-xs text-gray-500 mt-1">{activity.time}</p>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-gray-400" />
-                  </div>
+                  )}
                 </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Top Vendors */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 lg:col-span-2">
-            <div className="p-6 border-b border-gray-100">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-gray-800">Top Performing Vendors</h2>
-                <Users className="w-5 h-5 text-gray-400" />
               </div>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vendor</th>
-                    <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Orders</th>
-                    <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Revenue</th>
-                    <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rating</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {topVendors.map((vendor, index) => (
-                    <tr key={index} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 bg-gradient-to-br from-indigo-100 to-purple-100 rounded-lg flex items-center justify-center">
-                            <Store className="w-4 h-4 text-indigo-600" />
-                          </div>
-                          <span className="text-sm font-medium text-gray-900">{vendor.name}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{vendor.orders}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{vendor.revenue}</td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center gap-1">
-                          <Star className="w-4 h-4 text-yellow-400 fill-current" />
-                          <span className="text-sm font-medium text-gray-700">{vendor.rating}</span>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+            );
+          })}
         </div>
 
-        {/* Quick Stats Footer */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div className="bg-gradient-to-br from-indigo-50 to-indigo-100/50 rounded-xl p-4">
-            <p className="text-xs text-indigo-600 font-medium">Active Vendors</p>
-            <p className="text-xl font-bold text-indigo-900">42</p>
+        {/* Quick Action Cards */}
+        <div className="grid gap-4 md:grid-cols-3">
+          {actions.map((action, index) => {
+            const icons = [ClipboardCheck, ShieldAlert, FileBarChart];
+            const Icon = icons[index % icons.length];
+            const gradients = ["from-blue-600 to-indigo-600", "from-amber-600 to-orange-600", "from-emerald-600 to-teal-600"];
+            
+            return (
+              <Link
+                key={action.href}
+                href={action.href}
+                className="group relative min-w-0 overflow-hidden rounded-xl border border-slate-100 bg-white p-5 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl"
+              >
+                <div className={`absolute inset-0 bg-gradient-to-br ${gradients[index]} opacity-0 transition-opacity duration-300 group-hover:opacity-5`} />
+                <div className="relative z-10 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+                    <div className={`rounded-xl bg-gradient-to-br ${gradients[index]} p-2.5 shadow-md`}>
+                      <Icon className="h-5 w-5 text-white" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="break-words font-bold text-slate-900">{action.label}</p>
+                      <p className="break-words text-2xl font-bold text-slate-700">{action.count}</p>
+                    </div>
+                  </div>
+                  <div className="rounded-full bg-slate-100 p-2 transition-all group-hover:bg-white group-hover:shadow-md">
+                    <ArrowRight className="h-4 w-4 text-slate-500 transition-transform group-hover:translate-x-0.5" />
+                  </div>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+
+        {/* Two Column Layout */}
+        <div className="grid gap-6 lg:grid-cols-2">
+          {/* Restaurant Approval Queue */}
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-all hover:shadow-md">
+            <div className="border-b border-slate-100 bg-gradient-to-r from-slate-50/80 to-white px-4 py-4 sm:px-5">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">Restaurant Approval Queue</h2>
+                  <p className="text-sm text-slate-500">Latest restaurant registrations pending review</p>
+                </div>
+                {restaurants.length > 0 && (
+                  <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
+                    {restaurants.length} pending
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="divide-y divide-slate-100 max-h-[400px] overflow-y-auto">
+              {restaurants.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <div className="rounded-full bg-emerald-50 p-3 mb-3">
+                    <ClipboardCheck className="h-6 w-6 text-emerald-600" />
+                  </div>
+                  <p className="text-sm font-medium text-slate-700">All caught up!</p>
+                  <p className="text-xs text-slate-400">No pending restaurant applications</p>
+                </div>
+              ) : (
+                restaurants.map((restaurant, idx) => (
+                  <div 
+                    key={restaurant.id} 
+                    className="flex min-w-0 items-start justify-between gap-4 p-4 transition-all hover:bg-slate-50/80 group"
+                    style={{ animationDelay: `${idx * 50}ms` }}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                        <p className="break-words font-semibold text-slate-900">{restaurant.name}</p>
+                      </div>
+                      <p className="mt-1 break-words text-sm text-slate-500">
+                        {restaurant.city} • {restaurant.documents}
+                      </p>
+                    </div>
+                    <StatusBadge value={restaurant.status} />
+                  </div>
+                ))
+              )}
+            </div>
+            {restaurants.length > 0 && (
+              <div className="border-t border-slate-100 bg-slate-50/50 px-5 py-3">
+                <Link
+                  href="/ManageVendors"
+                  className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 transition-all hover:gap-2"
+                >
+                  View all applications
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
+              </div>
+            )}
           </div>
-          <div className="bg-gradient-to-br from-green-50 to-green-100/50 rounded-xl p-4">
-            <p className="text-xs text-green-600 font-medium">Pending Orders</p>
-            <p className="text-xl font-bold text-green-900">18</p>
-          </div>
-          <div className="bg-gradient-to-br from-purple-50 to-purple-100/50 rounded-xl p-4">
-            <p className="text-xs text-purple-600 font-medium">On Delivery</p>
-            <p className="text-xl font-bold text-purple-900">24</p>
-          </div>
-          <div className="bg-gradient-to-br from-amber-50 to-amber-100/50 rounded-xl p-4">
-            <p className="text-xs text-amber-600 font-medium">New Tickets</p>
-            <p className="text-xl font-bold text-amber-900">7</p>
+
+          {/* Latest Audit Logs */}
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-all hover:shadow-md">
+            <div className="border-b border-slate-100 bg-gradient-to-r from-slate-50/80 to-white px-4 py-4 sm:px-5">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">Latest Audit Logs</h2>
+                  <p className="text-sm text-slate-500">Recent admin activity and system events</p>
+                </div>
+                <ShieldAlert className="h-5 w-5 text-slate-400" />
+              </div>
+            </div>
+            <div className="divide-y divide-slate-100 max-h-[400px] overflow-y-auto">
+              {auditLogs.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <div className="rounded-full bg-slate-100 p-3 mb-3">
+                    <AlertTriangle className="h-6 w-6 text-slate-400" />
+                  </div>
+                  <p className="text-sm font-medium text-slate-700">No audit logs available</p>
+                  <p className="text-xs text-slate-400">System events will appear here</p>
+                </div>
+              ) : (
+                auditLogs.slice(0, 8).map((log, idx) => (
+                  <div 
+                    key={log.id} 
+                    className="flex min-w-0 items-start gap-4 p-4 transition-all hover:bg-slate-50/80"
+                    style={{ animationDelay: `${idx * 40}ms` }}
+                  >
+                    <div className="flex-shrink-0 mt-0.5">
+                      <div className="rounded-lg bg-slate-100 p-1.5">
+                        <AlertTriangle className="h-3.5 w-3.5 text-slate-500" />
+                      </div>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="break-words font-medium text-slate-900">{log.action}</p>
+                        <span className="text-xs text-slate-400 sm:whitespace-nowrap">{log.time}</span>
+                      </div>
+                      <p className="mt-0.5 break-words text-sm text-slate-500">
+                        by <span className="font-medium text-slate-700">{log.admin}</span>
+                      </p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+            {auditLogs.length > 0 && (
+              <div className="border-t border-slate-100 bg-slate-50/50 px-5 py-3">
+                <Link
+                  href="/AuditLogs"
+                  className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 transition-all hover:gap-2"
+                >
+                  View full audit trail
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
+              </div>
+            )}
           </div>
         </div>
       </div>
     </SuperLayout>
   );
-};
-
-export default SuperDashboard;
+}

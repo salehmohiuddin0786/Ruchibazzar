@@ -530,6 +530,48 @@ exports.updateRestaurant = async (req, res) => {
   }
 };
 
+exports.updateRestaurantApproval = async (req, res) => {
+  try {
+    const restaurant = await Restaurant.findByPk(req.params.id);
+
+    if (!restaurant) {
+      return res.status(404).json({
+        success: false,
+        message: "Restaurant not found",
+      });
+    }
+
+    const action = String(req.body?.action || "").toLowerCase();
+
+    if (!["approve", "reject"].includes(action)) {
+      return res.status(400).json({
+        success: false,
+        message: "Action must be approve or reject",
+      });
+    }
+
+    await restaurant.update({
+      isApproved: action === "approve",
+      isOpen: action === "approve",
+    });
+
+    return res.json({
+      success: true,
+      message:
+        action === "approve"
+          ? "Restaurant approved successfully"
+          : "Restaurant rejected successfully",
+      restaurant,
+    });
+  } catch (error) {
+    console.error("Restaurant Approval Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 exports.deleteRestaurant = async (req, res) => {
   try {
     const restaurant = await Restaurant.findByPk(req.params.id);

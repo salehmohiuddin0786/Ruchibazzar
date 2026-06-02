@@ -67,12 +67,12 @@ const SuperLayout = ({ children }) => {
     } else if (isTablet) {
       return sidebarOpen ? 'w-64' : 'w-20';
     } else {
-      return sidebarOpen ? 'w-80' : 'w-20';
+      return sidebarOpen ? 'w-64' : 'w-20';
     }
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50">
+    <div className="flex h-screen w-full overflow-hidden bg-gray-50">
       {/* Sidebar */}
       <div 
         className={`
@@ -98,7 +98,7 @@ const SuperLayout = ({ children }) => {
         `}
       >
         <DeliveryHeader 
-          onMenuClick={toggleSidebar}
+          toggleSidebar={toggleSidebar}
           isSidebarOpen={sidebarOpen}
           isMobile={isMobile}
         />
@@ -120,17 +120,17 @@ const SuperLayout = ({ children }) => {
         )}
 
         {/* Main Content with responsive padding */}
-        <main className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
+        <main className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
           <div className={`
             ${isMobile ? 'p-3' : isTablet ? 'p-5' : 'p-6 lg:p-8'}
-            min-h-full
+            min-h-full min-w-0
           `}>
             <div className={`
-              mx-auto
+              mx-auto min-w-0
               ${isMobile ? 'max-w-full' : 'max-w-7xl'}
             `}>
               {/* Content wrapper with responsive spacing */}
-              <div className="space-y-4 md:space-y-6">
+              <div className="min-w-0 space-y-4 md:space-y-6">
                 {children}
               </div>
             </div>

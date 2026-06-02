@@ -100,6 +100,37 @@ const formatUserResponse = (user) => ({
   isVerified: user.isVerified,
 });
 
+const RESTAURANT_UNDER_REVIEW_MESSAGE =
+  "Your account is under review. Please wait for admin approval.";
+
+const getApprovedPartnerRestaurant = async (user, res) => {
+  if (user.role !== ROLES.PARTNER) return null;
+
+  const restaurant = await Restaurant.findOne({
+    where: { ownerId: user.id },
+  });
+
+  if (!restaurant) {
+    res.status(403).json({
+      success: false,
+      code: "RESTAURANT_PROFILE_MISSING",
+      message: "Restaurant profile not found. Please complete registration.",
+    });
+    return false;
+  }
+
+  if (!restaurant.isApproved) {
+    res.status(403).json({
+      success: false,
+      code: "RESTAURANT_UNDER_REVIEW",
+      message: RESTAURANT_UNDER_REVIEW_MESSAGE,
+    });
+    return false;
+  }
+
+  return restaurant;
+};
+
 const register = async (req, res) => {
   try {
     const { name, email, phone: rawPhone, password, role, firebaseIdToken } = req.body || {};
@@ -246,6 +277,9 @@ const login = async (req, res) => {
       });
     }
 
+    const restaurant = await getApprovedPartnerRestaurant(user, res);
+    if (restaurant === false) return;
+
     const token = generateToken(user.id);
 
     return res.json({
@@ -254,6 +288,7 @@ const login = async (req, res) => {
       requiresOtp: false,
       token,
       user,
+      restaurant,
     });
   } catch (error) {
     console.error("Login Error:", error);
@@ -333,10 +368,9 @@ const googlePortalLogin = async (req, res) => {
     user.authProvider = user.authProvider || "google";
     await user.save();
 
-    const restaurant =
-      user.role === ROLES.PARTNER
-        ? await Restaurant.findOne({ where: { ownerId: user.id } })
-        : null;
+    const restaurant = await getApprovedPartnerRestaurant(user, res);
+    if (restaurant === false) return;
+
     const token = generateToken(user.id);
 
     return res.json({
@@ -389,9 +423,8 @@ const loginPartner = async (req, res) => {
       });
     }
 
-    const restaurant = await Restaurant.findOne({
-      where: { ownerId: user.id },
-    });
+    const restaurant = await getApprovedPartnerRestaurant(user, res);
+    if (restaurant === false) return;
 
     const token = generateToken(user.id);
 
@@ -411,10 +444,143 @@ const loginPartner = async (req, res) => {
   }
 };
 
+const signupMainAdmin = async (req, res) => {
+  try {
+    const { name, email, phone: rawPhone, password, signupCode } = req.body || {};
+    const phone = normalizeIndianPhone(rawPhone);
+
+    if (!name || !email || !phone || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Name, email, valid phone and password are required",
+      });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must be at least 6 characters",
+      });
+    }
+
+    const adminCount = await User.count({ where: { role: ROLES.ADMIN } });
+    const configuredSignupCode = process.env.MAINADMIN_SIGNUP_CODE;
+
+    if (adminCount > 0) {
+      if (!configuredSignupCode) {
+        return res.status(403).json({
+          success: false,
+          message: "Admin signup is locked. Configure MAINADMIN_SIGNUP_CODE to invite more admins.",
+        });
+      }
+
+      if (signupCode !== configuredSignupCode) {
+        return res.status(403).json({
+          success: false,
+          message: "Invalid admin signup code",
+        });
+      }
+    }
+
+    const existingEmail = await User.findOne({ where: { email } });
+    const existingPhone = await User.findOne({ where: { phone } });
+
+    if (existingEmail || existingPhone) {
+      return res.status(400).json({
+        success: false,
+        message: "Email or phone already registered",
+      });
+    }
+
+    const user = await User.create({
+      name: name.trim(),
+      email: email.trim().toLowerCase(),
+      phone,
+      password: await bcrypt.hash(password, 10),
+      role: ROLES.ADMIN,
+      isActive: true,
+      isVerified: true,
+      authProvider: "password",
+    });
+
+    const token = generateToken(user.id);
+
+    return res.status(201).json({
+      success: true,
+      message: "Main admin account created successfully",
+      token,
+      user: formatUserResponse(user),
+    });
+  } catch (error) {
+    console.error("Main Admin Signup Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Server error",
+    });
+  }
+};
+
+const loginMainAdmin = async (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Email and password are required",
+      });
+    }
+
+    const user = await User.findOne({
+      where: { email: String(email).trim().toLowerCase(), role: ROLES.ADMIN },
+    });
+
+    if (!user || !user.password) {
+      return res.status(400).json({
+        success: false,
+        message: "Main admin account not found",
+      });
+    }
+
+    if (!user.isActive) {
+      return res.status(403).json({
+        success: false,
+        message: "Main admin account is blocked",
+      });
+    }
+
+    const match = await bcrypt.compare(password, user.password);
+
+    if (!match) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid credentials",
+      });
+    }
+
+    const token = generateToken(user.id);
+
+    return res.json({
+      success: true,
+      message: "Main admin login successful",
+      token,
+      user: formatUserResponse(user),
+    });
+  } catch (error) {
+    console.error("Main Admin Login Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Server error",
+    });
+  }
+};
+
 module.exports = {
   register,
   login,
   googleAuth,
   googlePortalLogin,
   loginPartner,
+  signupMainAdmin,
+  loginMainAdmin,
 };

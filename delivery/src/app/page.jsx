@@ -51,14 +51,14 @@ export default function EnhancedDeliveryDashboard() {
 
   const loadDashboard = async (silent = false) => {
     if (!silent) setIsLoadingDashboard(true);
-    setDashboardError("");
+    if (!silent) setDashboardError("");
 
     try {
       const data = await deliveryApi('/delivery/dashboard');
       setDashboardData(data);
       setOnlineStatus(Boolean(data.stats?.isAvailable));
     } catch (err) {
-      setDashboardError(err.message || "Failed to load dashboard");
+      if (!silent) setDashboardError(err.message || "Failed to load dashboard");
     } finally {
       if (!silent) setIsLoadingDashboard(false);
     }
@@ -66,7 +66,7 @@ export default function EnhancedDeliveryDashboard() {
 
   useEffect(() => {
     loadDashboard();
-    const intervalId = setInterval(() => loadDashboard(true), 15000);
+    const intervalId = setInterval(() => loadDashboard(true), 60000);
     const handleOrdersChanged = () => loadDashboard(true);
     window.addEventListener("deliveryOrdersChanged", handleOrdersChanged);
     return () => {

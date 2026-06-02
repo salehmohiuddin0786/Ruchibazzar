@@ -224,9 +224,9 @@ export default function DeliveryHeader({ toggleSidebar, isSidebarOpen, pageTitle
       <header className="bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-b border-emerald-100/50 dark:border-gray-800 sticky top-0 z-30 shadow-sm">
         <div className="px-3 sm:px-4 lg:px-6">
           {/* Main Header Row */}
-          <div className="h-16 flex items-center justify-between">
+          <div className="flex h-16 min-w-0 items-center justify-between">
             {/* Left Section */}
-            <div className="flex items-center gap-2">
+            <div className="flex min-w-0 items-center gap-2">
               {isMobile && (
                 <button
                   onClick={handleMenuClick}
@@ -286,7 +286,7 @@ export default function DeliveryHeader({ toggleSidebar, isSidebarOpen, pageTitle
             </div>
 
             {/* Right Section */}
-            <div className="flex items-center gap-1">
+            <div className="flex shrink-0 items-center gap-1">
               {/* Quick Stats */}
               <div className="hidden xl:flex items-center gap-1 mr-1">
                 {stats.map((stat, index) => {
@@ -350,7 +350,7 @@ export default function DeliveryHeader({ toggleSidebar, isSidebarOpen, pageTitle
 
                 {/* Notifications Dropdown */}
                 {showNotifications && (
-                  <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-emerald-100 dark:border-gray-700 overflow-hidden z-50 animate-slideDown">
+                  <div className="absolute right-0 z-50 mt-2 w-[calc(100vw-1.5rem)] max-w-80 overflow-hidden rounded-xl border border-emerald-100 bg-white shadow-2xl animate-slideDown dark:border-gray-700 dark:bg-gray-800">
                     <div className="bg-gradient-to-r from-emerald-600 to-teal-600 p-3">
                       <div className="flex items-center justify-between">
                         <div>
@@ -447,7 +447,7 @@ export default function DeliveryHeader({ toggleSidebar, isSidebarOpen, pageTitle
 
                 {/* Profile Dropdown */}
                 {showProfileMenu && (
-                  <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-emerald-100 dark:border-gray-700 overflow-hidden z-50 animate-slideDown">
+                  <div className="absolute right-0 z-50 mt-2 w-[calc(100vw-1.5rem)] max-w-56 overflow-hidden rounded-xl border border-emerald-100 bg-white shadow-2xl animate-slideDown dark:border-gray-700 dark:bg-gray-800">
                     <div className="bg-gradient-to-r from-emerald-600 to-teal-600 p-3">
                       <div className="flex items-center gap-2">
                         <div className="w-10 h-10 bg-white/20 backdrop-blur rounded-lg flex items-center justify-center text-white font-bold text-base border border-white/30">
